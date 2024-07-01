@@ -123,15 +123,8 @@ if args.verbose:
         print(
             f'There is probably more than 10,000 datasets available for {input_species}.')
 
-
-counter = 0
-
-counter += 1
-# query
-if counter == 3:
-    time.sleep(1)
-
-
+time.sleep(1)
+query_counter = 0
 for exp_id in copy_record_idlist:
     if args.verbose:
         print("Recovering information for SRA ID:", exp_id)
@@ -139,6 +132,10 @@ for exp_id in copy_record_idlist:
     c.execute("SELECT ncbi_expid FROM sra_metadata WHERE ncbi_expid = ?", (exp_id,))
     data = c.fetchall()
     if len(data) == 0:
+        if query_counter == 3:
+            time.sleep(1)
+            query_counter = 0
+        query_counter += 1
         handle = Entrez.esummary(retmode="xml", id=exp_id, db="sra")
         sra_record = Entrez.read(handle)
         sra_avail_date = sra_record[0]['CreateDate']
@@ -164,7 +161,6 @@ for exp_id in copy_record_idlist:
             print(
                 f'Skipping {sra_ids}: looks like it is public but still not available.')
             public_datasets_not_available += 1
-            time.sleep(2)
             continue
         else:
             srr_total_spots = run.attrib['total_spots']
@@ -173,45 +169,41 @@ for exp_id in copy_record_idlist:
             root_expxml = ET.fromstring(expxml_str)
             platform = root_expxml.find(
                 './/Platform').attrib['instrument_model']
-            # size?
 
             if args.verbose:
                 print(
                     f'srr: {srr_acc}, srr total spots : {srr_total_spots},\
                         srr total bases: {srr_total_bases}, Platform: {platform}')
 
-        # If dataset is recent, skip it
-        if days_from_sra.days < 31:
-            print(
-                f'Skipping {sra_ids}: looks like it is new (< 31 days).\tMight not be available')
-            public_datasets_not_available += 1
-            time.sleep(2)
-            continue
         if 'unavailable' in root_runs.attrib.keys():
             if root_runs.attrib['unavailable'] == 'true':
                 if root_runs.attrib['is_public'] == 'true':
                     print(
                         f'Skipping {sra_id}: looks like it is public but still not available.')
                     public_datasets_not_available += 1
-                    time.sleep(2)
                     continue
 
         handle.close()
-        time.sleep(2)
+        if query_counter == 3:
+            time.sleep(1)
+            query_counter = 0
+        query_counter += 1
         handle = Entrez.elink(dbfrom="sra", id=exp_id, db="biosample")
         record_samn = Entrez.read(handle)
         handle.close()
         if not record_samn[0]['LinkSetDb']:
             print(f'Skipping {sra_ids}: no BioSample ID found.')
-            time.sleep(2)
             no_biosample_found_current_run += 1
             continue
         id = str(record_samn[0]['LinkSetDb'][0]['Link'][0]['Id'])
+        if query_counter == 3:
+            time.sleep(1)
+            query_counter = 0
+        query_counter += 1
         handle = Entrez.esummary(retmode="xml", id=id, db="biosample")
         record_samn = Entrez.read(handle)
         handle.close()
         samn_id = record_samn['DocumentSummarySet']['DocumentSummary'][0]['Accession']
-        time.sleep(1)
 
         # Get Biosample information
         samn_name = ''
@@ -250,13 +242,20 @@ for exp_id in copy_record_idlist:
             source_name: {source_name}')
 
         # Get Literature Information (PubMed)
+        if query_counter == 3:
+            time.sleep(1)
+            query_counter = 0
+        query_counter += 1
         handle = Entrez.elink(dbfrom="sra", id=exp_id, db="pubmed")
         record_pmid = Entrez.read(handle)
         pmid = ''
         if record_pmid[0]['LinkSetDb']:
             if 'Id' in record_pmid[0]['LinkSetDb'][0]['Link'][0].keys():
                 pmid = record_pmid[0]['LinkSetDb'][0]['Link'][0]['Id']
-        time.sleep(1)
+        if query_counter == 3:
+            time.sleep(1)
+            query_counter = 0
+        query_counter += 1
         handle = Entrez.elink(dbfrom="sra", id=exp_id, db="bioproject")
         record_prj = Entrez.read(handle)
         handle.close()
@@ -266,6 +265,10 @@ for exp_id in copy_record_idlist:
         prj_id = ''
         if record_prj[0]['LinkSetDb']:
             idprj = str(record_prj[0]['LinkSetDb'][0]['Link'][0]['Id'])
+            if query_counter == 3:
+                time.sleep(1)
+                query_counter = 0
+            query_counter += 1
             handle = Entrez.esummary(retmode="xml", id=idprj, db="bioproject")
             record_prj = Entrez.read(handle)
             handle.close()
@@ -285,6 +288,10 @@ for exp_id in copy_record_idlist:
                     manuscript_title = manuscript_title.replace(
                         '[HTML][HTML] ', '')
                     title_sentence = manuscript_title + "[title]"
+                    if query_counter == 3:
+                        time.sleep(1)
+                        query_counter = 0
+                    query_counter += 1
                     handle = Entrez.esearch(
                         db="pubmed", term=title_sentence, retmode="xml")
                     record = Entrez.read(handle)
