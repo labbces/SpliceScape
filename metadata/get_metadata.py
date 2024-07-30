@@ -78,7 +78,7 @@ c.execute("""CREATE TABLE IF NOT EXISTS sra_metadata (
         ncbi_biosample_name TEXT,
         ncbi_bioproject_id TEXT,
         number_of_spots INTEGER,
-        number_of_bases INTEGER, 
+        number_of_bases INTEGER,
         platform TEXT,
         species_name TEXT,
         species_cultivar TEXT,
@@ -148,196 +148,208 @@ for exp_id in copy_record_idlist:
 
         sra_ids = []
         unavailable_run = 0
-        for run in root_runs:
-            srr_acc = run.attrib['acc']
-            sra_ids.append(srr_acc)
-            if 'unavailable' in run.attrib.keys():
-                if run.attrib['unavailable'] == 'true':
-                    if run.attrib['is_public'] == 'true':
-                        # Will skip experiment if at least one SRA ACCESSION is unavailable
-                        unavailable_run = 1
+        if root_runs:
+            for run in root_runs:
+                srr_acc = run.attrib['acc']
+                sra_ids.append(srr_acc)
+                if 'unavailable' in run.attrib.keys():
+                    if run.attrib['unavailable'] == 'true':
+                        if run.attrib['is_public'] == 'true':
+                            # Will skip experiment if at least one SRA ACCESSION is unavailable
+                            unavailable_run = 1
 
-        # If SRA ACCESSION is public but unavailable, skip experiment
-        if unavailable_run:
-            print(
-                f'Skipping {sra_ids}: looks like it is public but still not available.')
-            public_datasets_not_available += 1
-            continue
-        else:
-            srr_total_spots = run.attrib['total_spots']
-            srr_total_bases = run.attrib['total_bases']
-            expxml_str = "<ExpXml>" + sra_record[0]['ExpXml'] + "</ExpXml>"
-            root_expxml = ET.fromstring(expxml_str)
-            platform = root_expxml.find(
-                './/Platform').attrib['instrument_model']
-
-            if args.verbose:
+            # If SRA ACCESSION is public but unavailable, skip experiment
+            if unavailable_run:
                 print(
-                    f'srr: {srr_acc}, srr total spots : {srr_total_spots},\
-                        srr total bases: {srr_total_bases}, Platform: {platform}')
+                    f'Skipping {sra_ids}: looks like it is public but still not available.')
+                public_datasets_not_available += 1
+                continue
+            else:
+                srr_total_spots = run.attrib.get(
+                    'total_spots', 'default_value')
+                srr_total_bases = run.attrib.get(
+                    'total_bases', 'default_value')
+                # srr_total_spots = run.attrib['total_spots']
+                # srr_total_bases = run.attrib['total_bases']
+                expxml_str = "<ExpXml>" + sra_record[0]['ExpXml'] + "</ExpXml>"
+                root_expxml = ET.fromstring(expxml_str)
+                platform = root_expxml.find(
+                    './/Platform').attrib['instrument_model']
 
-        if 'unavailable' in root_runs.attrib.keys():
-            if root_runs.attrib['unavailable'] == 'true':
-                if root_runs.attrib['is_public'] == 'true':
+                if args.verbose:
                     print(
-                        f'Skipping {sra_id}: looks like it is public but still not available.')
-                    public_datasets_not_available += 1
-                    continue
+                        f'srr: {srr_acc}, srr total spots : {srr_total_spots},\
+                            srr total bases: {srr_total_bases}, Platform: {platform}')
 
-        handle.close()
-        if query_counter == 3:
-            time.sleep(1)
-            query_counter = 0
-        query_counter += 1
-        handle = Entrez.elink(dbfrom="sra", id=exp_id, db="biosample")
-        record_samn = Entrez.read(handle)
-        handle.close()
-        if not record_samn[0]['LinkSetDb']:
-            print(f'Skipping {sra_ids}: no BioSample ID found.')
-            no_biosample_found_current_run += 1
-            continue
-        id = str(record_samn[0]['LinkSetDb'][0]['Link'][0]['Id'])
-        if query_counter == 3:
-            time.sleep(1)
-            query_counter = 0
-        query_counter += 1
-        handle = Entrez.esummary(retmode="xml", id=id, db="biosample")
-        record_samn = Entrez.read(handle)
-        handle.close()
-        samn_id = record_samn['DocumentSummarySet']['DocumentSummary'][0]['Accession']
+            if 'unavailable' in root_runs.attrib.keys():
+                if root_runs.attrib['unavailable'] == 'true':
+                    if root_runs.attrib['is_public'] == 'true':
+                        print(
+                            f'Skipping {sra_id}: looks like it is public but still not available.')
+                        public_datasets_not_available += 1
+                        continue
 
-        # Get Biosample information
-        samn_name = ''
-        if record_samn['DocumentSummarySet']['DocumentSummary'][0]['Title']:
-            samn_name = record_samn['DocumentSummarySet']['DocumentSummary'][0]['Title']
-        root_sample_data = ET.fromstring(
-            record_samn['DocumentSummarySet']['DocumentSummary'][0]['SampleData'])
-        cultivar = ''
-        age = ''
-        genotype = ''
-        dev_stage = ''
-        tissue = ''
-        treatment = ''
-        source_name = ''
-        for elem in root_sample_data:
-            if elem.tag == 'Attributes':
-                for biosample_attribute in elem:
-                    attrib_name = biosample_attribute.get('attribute_name')
-                    if attrib_name == 'cultivar':
-                        cultivar = biosample_attribute.text
-                    if attrib_name == 'age':
-                        age = biosample_attribute.text
-                    if (attrib_name == 'genotype') or (attrib_name == 'genotype/variation'):
-                        genotype = biosample_attribute.text
-                    if (attrib_name == 'developmental stage') or (attrib_name == 'dev_stage'):
-                        dev_stage = biosample_attribute.text
-                    if (attrib_name == 'organism part') or (attrib_name == 'tissue'):
-                        tissue = biosample_attribute.text
-                    if attrib_name == 'treatment':
-                        treatment = biosample_attribute.text
-                    if attrib_name == 'source_name':
-                        source_name = biosample_attribute.text
-        if args.verbose:
-            print(f'cultivar: {cultivar}, age: {age}, genotype: {genotype},\
-            dev_stage: {dev_stage}, tissue: {tissue}, treatment: {treatment},\
-            source_name: {source_name}')
-
-        # Get Literature Information (PubMed)
-        if query_counter == 3:
-            time.sleep(1)
-            query_counter = 0
-        query_counter += 1
-        handle = Entrez.elink(dbfrom="sra", id=exp_id, db="pubmed")
-        record_pmid = Entrez.read(handle)
-        pmid = ''
-        if record_pmid[0]['LinkSetDb']:
-            if 'Id' in record_pmid[0]['LinkSetDb'][0]['Link'][0].keys():
-                pmid = record_pmid[0]['LinkSetDb'][0]['Link'][0]['Id']
-        if query_counter == 3:
-            time.sleep(1)
-            query_counter = 0
-        query_counter += 1
-        handle = Entrez.elink(dbfrom="sra", id=exp_id, db="bioproject")
-        record_prj = Entrez.read(handle)
-        handle.close()
-
-        # Get Bioproject accession
-        idprj = ''
-        prj_id = ''
-        if record_prj[0]['LinkSetDb']:
-            idprj = str(record_prj[0]['LinkSetDb'][0]['Link'][0]['Id'])
+            handle.close()
             if query_counter == 3:
                 time.sleep(1)
                 query_counter = 0
             query_counter += 1
-            handle = Entrez.esummary(retmode="xml", id=idprj, db="bioproject")
+            handle = Entrez.elink(dbfrom="sra", id=exp_id, db="biosample")
+            record_samn = Entrez.read(handle)
+            handle.close()
+            if not record_samn[0]['LinkSetDb']:
+                print(f'Skipping {sra_ids}: no BioSample ID found.')
+                no_biosample_found_current_run += 1
+                continue
+            id = str(record_samn[0]['LinkSetDb'][0]['Link'][0]['Id'])
+            if query_counter == 3:
+                time.sleep(1)
+                query_counter = 0
+            query_counter += 1
+            handle = Entrez.esummary(retmode="xml", id=id, db="biosample")
+            record_samn = Entrez.read(handle)
+            handle.close()
+            samn_id = record_samn['DocumentSummarySet']['DocumentSummary'][0]['Accession']
+
+            # Get Biosample information
+            samn_name = ''
+            if record_samn['DocumentSummarySet']['DocumentSummary'][0]['Title']:
+                samn_name = record_samn['DocumentSummarySet']['DocumentSummary'][0]['Title']
+            root_sample_data = ET.fromstring(
+                record_samn['DocumentSummarySet']['DocumentSummary'][0]['SampleData'])
+            cultivar = ''
+            age = ''
+            genotype = ''
+            dev_stage = ''
+            tissue = ''
+            treatment = ''
+            source_name = ''
+            for elem in root_sample_data:
+                if elem.tag == 'Attributes':
+                    for biosample_attribute in elem:
+                        attrib_name = biosample_attribute.get('attribute_name')
+                        if attrib_name == 'cultivar':
+                            cultivar = biosample_attribute.text
+                        if attrib_name == 'age':
+                            age = biosample_attribute.text
+                        if (attrib_name == 'genotype') or (attrib_name == 'genotype/variation'):
+                            genotype = biosample_attribute.text
+                        if (attrib_name == 'developmental stage') or (attrib_name == 'dev_stage'):
+                            dev_stage = biosample_attribute.text
+                        if (attrib_name == 'organism part') or (attrib_name == 'tissue'):
+                            tissue = biosample_attribute.text
+                        if attrib_name == 'treatment':
+                            treatment = biosample_attribute.text
+                        if attrib_name == 'source_name':
+                            source_name = biosample_attribute.text
+            if args.verbose:
+                print(f'cultivar: {cultivar}, age: {age}, genotype: {genotype},\
+                dev_stage: {dev_stage}, tissue: {tissue}, treatment: {treatment},\
+                source_name: {source_name}')
+
+            # Get Literature Information (PubMed)
+            if query_counter == 3:
+                time.sleep(1)
+                query_counter = 0
+            query_counter += 1
+            handle = Entrez.elink(dbfrom="sra", id=exp_id, db="pubmed")
+            record_pmid = Entrez.read(handle)
+            pmid = ''
+            if record_pmid[0]['LinkSetDb']:
+                if 'Id' in record_pmid[0]['LinkSetDb'][0]['Link'][0].keys():
+                    pmid = record_pmid[0]['LinkSetDb'][0]['Link'][0]['Id']
+            if query_counter == 3:
+                time.sleep(1)
+                query_counter = 0
+            query_counter += 1
+            handle = Entrez.elink(dbfrom="sra", id=exp_id, db="bioproject")
             record_prj = Entrez.read(handle)
             handle.close()
-            prj_id = record_prj['DocumentSummarySet']['DocumentSummary'][0]['Project_Acc']
 
-        # Get literature from Google Scholar, if pmid not found for experiment
-        if not pmid:
-            if args.verbose:
-                print(f'Could not find PubMed identifier for {str(sra_ids)}')
-                print(f'Searching for Bioproject \"{prj_id}\" on G. Scholar')
-            url = 'https://scholar.google.com.br/scholar?q=' + prj_id
-            response = requests.get(url, headers=headers)
-            soup = BeautifulSoup(response.content, 'lxml')
-            if soup.select('[data-lid]'):
-                for item in soup.select('[data-lid]'):
-                    manuscript_title = item.select('h3')[0].get_text()
-                    manuscript_title = manuscript_title.replace(
-                        '[HTML][HTML] ', '')
-                    title_sentence = manuscript_title + "[title]"
-                    if query_counter == 3:
-                        time.sleep(1)
-                        query_counter = 0
-                    query_counter += 1
-                    handle = Entrez.esearch(
-                        db="pubmed", term=title_sentence, retmode="xml")
-                    record = Entrez.read(handle)
-                    if record['IdList']:
-                        pmid = record['IdList'][0]
-                        if args.verbose:
-                            print(
-                                f'Following PudMed record was found on Google Scholar:')
-                            print(f'BIOPROJECT: {prj_id}')
-                            print(f'PubMed Identifier: {pmid}')
-                            print(f'Title of Manuscript: {manuscript_title}')
-                    else:
-                        if args.verbose:
-                            print(
-                                f'No search results for PubMed identificar on Google Scholar for {prj_id}.')
-                    handle.close()
-            else:
+            # Get Bioproject accession
+            idprj = ''
+            prj_id = ''
+            if record_prj[0]['LinkSetDb']:
+                idprj = str(record_prj[0]['LinkSetDb'][0]['Link'][0]['Id'])
+                if query_counter == 3:
+                    time.sleep(1)
+                    query_counter = 0
+                query_counter += 1
+                handle = Entrez.esummary(
+                    retmode="xml", id=idprj, db="bioproject")
+                record_prj = Entrez.read(handle)
+                handle.close()
+                prj_id = record_prj['DocumentSummarySet']['DocumentSummary'][0]['Project_Acc']
+
+            # Get literature from Google Scholar, if pmid not found for experiment
+            if not pmid:
                 if args.verbose:
                     print(
-                        f'No search results for PubMed identificar on Google Scholar for {prj_id}.')
+                        f'Could not find PubMed identifier for {str(sra_ids)}')
+                    print(
+                        f'Searching for Bioproject \"{prj_id}\" on G. Scholar')
+                url = 'https://scholar.google.com.br/scholar?q=' + prj_id
+                response = requests.get(url, headers=headers)
+                soup = BeautifulSoup(response.content, 'lxml')
+                if soup.select('[data-lid]'):
+                    for item in soup.select('[data-lid]'):
+                        manuscript_title = item.select('h3')[0].get_text()
+                        manuscript_title = manuscript_title.replace(
+                            '[HTML][HTML] ', '')
+                        title_sentence = manuscript_title + "[title]"
+                        if query_counter == 3:
+                            time.sleep(1)
+                            query_counter = 0
+                        query_counter += 1
+                        handle = Entrez.esearch(
+                            db="pubmed", term=title_sentence, retmode="xml")
+                        record = Entrez.read(handle)
+                        if record['IdList']:
+                            pmid = record['IdList'][0]
+                            if args.verbose:
+                                print(
+                                    f'Following PudMed record was found on Google Scholar:')
+                                print(f'BIOPROJECT: {prj_id}')
+                                print(f'PubMed Identifier: {pmid}')
+                                print(
+                                    f'Title of Manuscript: {manuscript_title}')
+                        else:
+                            if args.verbose:
+                                print(
+                                    f'No search results for PubMed identificar on Google Scholar for {prj_id}.')
+                        handle.close()
+                else:
+                    if args.verbose:
+                        print(
+                            f'No search results for PubMed identificar on Google Scholar for {prj_id}.')
 
-        for sra_id in sra_ids:
-            c.execute("""INSERT INTO sra_metadata (
-                    sra_id, ncbi_expid,
-                    ncbi_biosample_id,
-                    ncbi_biosample_name,
-                    ncbi_bioproject_id,
-                    number_of_spots,
-                    number_of_bases, 
-                    platform,
-                    species_name,
-                    species_cultivar,
-                    species_genotype,
-                    treatment,
-                    dev_stage,
-                    tissue,
-                    age,
-                    source_name,
-                    pmid, layout
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                      (sra_id, exp_id, samn_id, samn_name, prj_id, srr_total_spots,
-                       srr_total_bases, platform, input_species, cultivar, genotype,
-                       treatment, dev_stage, tissue, age, source_name, pmid,
-                       input_lib_layout))
+            for sra_id in sra_ids:
+                c.execute("""INSERT INTO sra_metadata (
+                        sra_id, ncbi_expid,
+                        ncbi_biosample_id,
+                        ncbi_biosample_name,
+                        ncbi_bioproject_id,
+                        number_of_spots,
+                        number_of_bases, 
+                        platform,
+                        species_name,
+                        species_cultivar,
+                        species_genotype,
+                        treatment,
+                        dev_stage,
+                        tissue,
+                        age,
+                        source_name,
+                        pmid, layout
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                          (sra_id, exp_id, samn_id, samn_name, prj_id, srr_total_spots,
+                           srr_total_bases, platform, input_species, cultivar, genotype,
+                           treatment, dev_stage, tissue, age, source_name, pmid,
+                           input_lib_layout))
+        else:
+            print(
+                f'Something went wront while trying to recover runs; {runs}. Impossible to define run.')
 
         conn2sra_metadata_db.commit()
         public_datasets_added_to_sqlite += 1
