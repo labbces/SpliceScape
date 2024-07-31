@@ -175,13 +175,14 @@ for exp_id in copy_record_idlist:
                 platform = root_expxml.find(
                     './/Platform').attrib['instrument_model']
                 layout = root_expxml.find('.//Library_descriptor/LIBRARY_LAYOUT')
-                if layout is not None:
-                    if layout.find('PAIRED') is not None:
-                        lib_layout = "PAIRED"
-                        print("PAIRED")
-                    elif layout.find('SINGLE') is not None:
-                        print("SINGLE")
-                        lib_layout = "SINGLE"
+                if lib_layout != "":
+                    if layout is not None:
+                        if layout.find('PAIRED') is not None:
+                            lib_layout = "PAIRED"
+                            print("PAIRED")
+                        elif layout.find('SINGLE') is not None:
+                            print("SINGLE")
+                            lib_layout = "SINGLE"
 
 
                 if args.verbose:
