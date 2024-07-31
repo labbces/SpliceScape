@@ -8,7 +8,7 @@ library(ggplot2)
 data <- data.frame(
   Species = c("Z. mays", "S. bicolor", "H. vulgare", "A. thaliana", "T. aestivum", "S. italica"),
   Especies = c("Z. mays", "S. bicolor", "H. vulgare", "A. thaliana", "T. aestivum", "S. italica"),
-  Values = c(27924, 6994, 7860, 34946, 15734, 1595)
+  Values = c(122, 24, 104, 130, 230, 0)
 )
 
 # Definir as cores em formato hex
@@ -21,7 +21,7 @@ ggplot(data, aes(x = Especies, y = Values, fill = Especies)) +
   geom_bar(stat = "identity") +
   scale_fill_manual(values = colors) +
   theme_minimal() +
-  labs(title = "Quantidade de datasets SRA/NCBI",
+  labs(title = "Quantidade de datasets SRA/NCBI - plataforma de sequenciamento PacBio",
        x = "Espécie",
        y = "Total de SRA")
 
@@ -31,6 +31,6 @@ ggplot(data, aes(x = Species, y = Values, fill = Species)) +
   geom_bar(stat = "identity") +
   scale_fill_manual(values = colors) +
   theme_minimal() +
-  labs(title = "Total datasets (SRA/NCBI) available",
+  labs(title = "Total datasets (SRA/NCBI) available - PacBio sequencing platform",
        x = "Species",
        y = "Total SRA datasets")
