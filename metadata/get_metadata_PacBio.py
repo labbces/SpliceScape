@@ -72,7 +72,6 @@ c = conn2sra_metadata_db.cursor()
 # CREATE TABLE sra_metadata (if necessary)
 c.execute("""CREATE TABLE IF NOT EXISTS sra_metadata (
         sra_id TEXT UNIQUE,
-        strand_info TEXT,
         ncbi_expid INTEGER,
         ncbi_biosample_id TEXT,
         ncbi_biosample_name TEXT,
@@ -99,14 +98,15 @@ if input_lib_layout == "PAIRED":
 elif input_lib_layout == "SINGLE":
     lib_layout = "\"library layout single\"[Properties]"
 else:
-    lib_layout = ""
+    input_lib_layout = ""
 
 Entrez.email = email_address
 
 headers = {}
 headers['User-Agent'] = 'Mozilla/5.0 (X11; Linux x86_64; rv:10.0) Gecko/20100101 Firefox/10.0'
 
-query = input_species+"[ORGN] "+"platform+pacbio+smrt[Properties]"+" "+"biomol rna[Properties]"+" "+lib_layout
+query = input_species+"[ORGN] "+"platform+pacbio+smrt[Properties]" + \
+    " "+"biomol rna[Properties]"+" "+lib_layout
 print(query)
 
 handle = Entrez.esearch(db="sra", term=query,
@@ -174,8 +174,9 @@ for exp_id in copy_record_idlist:
                 root_expxml = ET.fromstring(expxml_str)
                 platform = root_expxml.find(
                     './/Platform').attrib['instrument_model']
-                layout = root_expxml.find('.//Library_descriptor/LIBRARY_LAYOUT')
-                if lib_layout != "":
+                layout = root_expxml.find(
+                    './/Library_descriptor/LIBRARY_LAYOUT')
+                if input_lib_layout != "":
                     if layout is not None:
                         if layout.find('PAIRED') is not None:
                             lib_layout = "PAIRED"
@@ -183,7 +184,8 @@ for exp_id in copy_record_idlist:
                         elif layout.find('SINGLE') is not None:
                             print("SINGLE")
                             lib_layout = "SINGLE"
-
+                    else:
+                        lib_layout = input_lib_layout
 
                 if args.verbose:
                     print(
@@ -334,7 +336,7 @@ for exp_id in copy_record_idlist:
 
             for sra_id in sra_ids:
                 c.execute("""INSERT INTO sra_metadata (
-                        sra_id, strand_info, ncbi_expid,
+                        sra_id, ncbi_expid,
                         ncbi_biosample_id,
                         ncbi_biosample_name,
                         ncbi_bioproject_id,
@@ -352,10 +354,10 @@ for exp_id in copy_record_idlist:
                         pmid, layout
                         )
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                          (sra_id, lib_layout, exp_id, samn_id, samn_name, prj_id, srr_total_spots,
+                          (sra_id, exp_id, samn_id, samn_name, prj_id, srr_total_spots,
                            srr_total_bases, platform, input_species, cultivar, genotype,
                            treatment, dev_stage, tissue, age, source_name, pmid,
-                           input_lib_layout))
+                           lib_layout))
         else:
             print(
                 f'Something went wront while trying to recover runs; {runs}. Impossible to define run.')
@@ -372,9 +374,8 @@ for exp_id in copy_record_idlist:
 if args.srr_list_file_wpmid:
     srr_list_outfile = args.srr_list_file_wpmid
     c.execute("""SELECT sra_id FROM sra_metadata WHERE pmid != ''
-              AND species_name = ?
-              AND layout = ?""",
-              (input_species, input_lib_layout))
+              AND species_name = ?""",
+              (input_species))
     srr_list = c.fetchall()
     srr_list_outfile_obj = open(srr_list_outfile, 'a+')
     first_in_list_wpmid = 0
