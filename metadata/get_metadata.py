@@ -107,7 +107,6 @@ headers = {}
 headers['User-Agent'] = 'Mozilla/5.0 (X11; Linux x86_64; rv:10.0) Gecko/20100101 Firefox/10.0'
 
 query = input_species+"[ORGN] "+"biomol rna[Properties]"+" "+lib_layout
-# query = input_species+"[ORGN] "+"biomol rna[Properties]"+" "+lib_layout + "platform pacbio smirt[Properties]"
 print(query)
 
 handle = Entrez.esearch(db="sra", term=query,
@@ -275,11 +274,16 @@ for exp_id in copy_record_idlist:
                     time.sleep(1)
                     query_counter = 0
                 query_counter += 1
-                handle = Entrez.esummary(
-                    retmode="xml", id=idprj, db="bioproject")
-                record_prj = Entrez.read(handle)
-                handle.close()
-                prj_id = record_prj['DocumentSummarySet']['DocumentSummary'][0]['Project_Acc']
+                try:
+                    handle = Entrez.esummary(
+                        retmode="xml", id=idprj, db="bioproject")
+                    record_prj = Entrez.read(handle)
+                    handle.close()
+                except RuntimeError as e:
+                    prj_id = record_prj['DocumentSummarySet']['DocumentSummary'][0]['Project_Acc']
+                    print(
+                        f"Error while trying to obtain summary of Bioproject {idprj}: {e}")
+                    continue
 
             # Get literature from Google Scholar, if pmid not found for experiment
             if not pmid:
@@ -349,7 +353,7 @@ for exp_id in copy_record_idlist:
                            input_lib_layout))
         else:
             print(
-                f'Something went wront while trying to recover runs; {runs}. Impossible to define run.')
+                f"Something went wrong while trying to recover runs: {runs}. Unable to define the run.")
 
         conn2sra_metadata_db.commit()
         public_datasets_added_to_sqlite += 1
