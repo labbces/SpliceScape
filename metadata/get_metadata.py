@@ -274,16 +274,25 @@ for exp_id in copy_record_idlist:
                     time.sleep(1)
                     query_counter = 0
                 query_counter += 1
-                try:
-                    handle = Entrez.esummary(
-                        retmode="xml", id=idprj, db="bioproject")
-                    record_prj = Entrez.read(handle)
-                    handle.close()
-                except RuntimeError as e:
+            try:
+                handle = Entrez.esummary(
+                    retmode="xml", id=idprj, db="bioproject")
+                record_prj = Entrez.read(handle)
+                handle.close()
+
+                if 'DocumentSummarySet' in record_prj and record_prj['DocumentSummarySet']['DocumentSummary']:
                     prj_id = record_prj['DocumentSummarySet']['DocumentSummary'][0]['Project_Acc']
+                else:
                     print(
-                        f"Error while trying to obtain summary of Bioproject {idprj}: {e}")
+                        f"No document summary found for Bioproject ID {idprj}.")
                     continue
+            except RuntimeError as e:
+                print(
+                    f"Error while trying to obtain summary of Bioproject {idprj}: {e}")
+                continue
+            except Exception as e:
+                print(f"An unexpected error occurred: {e}")
+                continue
 
             # Get literature from Google Scholar, if pmid not found for experiment
             if not pmid:
