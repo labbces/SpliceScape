@@ -1,7 +1,7 @@
 params.reads = "SRR28642269"
 
 process getReadFTP {
-    publishDir "$projectDir", mode: 'copy'
+    publishDir "$projectDir/FTP", mode: 'copy'
     container 'andreatelatin/getreads:2.0'
     input:
     val sra_accession
@@ -14,6 +14,7 @@ process getReadFTP {
 }
 
 process downloadReadFTP {
+    publishDir "$projectDir/reads", mode: 'copy'
     input:
     path json_file
 
