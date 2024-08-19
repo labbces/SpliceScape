@@ -49,19 +49,20 @@ process runBBDuK{
         val trimq
         val k
         path rref
+               
     
     output:
         path('*.trimmed.R1.fastq.gz')
-        path('*trimmed.R2.fastq.gz')
+        path('*.trimmed.R2.fastq.gz')
     
     script: 
     def raw = "in1=${reads1} in2=${reads2}"
-    def trimmed = "out1=${sra_accession}.trimmed.R1.fastq.gz out2=${sra_accession}trimmed.R2.fastq.gz"
+    def trimmed = "out1=${sra_accession}.trimmed.R1.fastq.gz out2=${sra_accession}.trimmed.R2.fastq.gz"
     def contaminants_fa = "rref=$rref"
     def args = "minlength=${minlength} qtrim=w trimq=${trimq} showspeed=t k=${k} overwrite=true"
     """
-    maxmem=\$(echo \"$task.memory\"| sed 's/ GB/g/g')
-    bbduk.sh \\
+    maxmem=20g
+    ${params.bbduk}  \\
         -Xmx\$maxmem \\
         $raw \\
         $trimmed \\
@@ -75,12 +76,12 @@ process runBBDuK{
 
 
 workflow {
-    reads = params.reads = "SRR28642269"
-    bbduk = params.bbduk = "/home/beatrizestevam/progs/BBMap_35.85/bbmap/bbduk2.sh" // no computador do CENA
-    rref = params.rref = "/Storage/progs/Trimmomatic-0.38/adapters/NexteraPE-PE.fa"
-    minlength = params.minlength = 60
-    trimq = params.trimq = 20
-    k = params.k = 27
+    reads = params.reads 
+    bbduk = params.bbduk 
+    rref = params.rref
+    minlength = params.minlength 
+    trimq = params.trimq 
+    k = params.k 
 
     genjson = channel.of(reads) | getReadFTP | downloadReadFTP
     running_bbduk = runBBDuK(genjson, reads, minlength, trimq, k, rref)
