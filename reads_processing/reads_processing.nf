@@ -5,7 +5,7 @@ params.rref = "/Storage/progs/Trimmomatic-0.38/adapters/NexteraPE-PE.fa"
 params.minlength = 60
 params.trimq = 20
 params.k = 27
-
+params.maxmem = 20
 
 // Getting FTP from SRA 
 
@@ -61,7 +61,7 @@ process runBBDuK{
     def contaminants_fa = "rref=$rref"
     def args = "minlength=${minlength} qtrim=w trimq=${trimq} showspeed=t k=${k} overwrite=true"
     """
-    maxmem=20g
+    maxmem=${params.maxmem}g
     ${params.bbduk}  \\
         -Xmx\$maxmem \\
         $raw \\
