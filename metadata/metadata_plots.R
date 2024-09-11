@@ -6,31 +6,39 @@ library(ggplot2)
 
 # Criar um dataframe com os valores fornecidos
 data <- data.frame(
-  Species = c("Z. mays", "S. bicolor", "H. vulgare", "A. thaliana", "T. aestivum", "S. italica"),
-  Especies = c("Z. mays", "S. bicolor", "H. vulgare", "A. thaliana", "T. aestivum", "S. italica"),
-  Values = c(27924, 6994, 7860, 34946, 15734, 1595)
+  Species = c("Z. mays", "S. bicolor", "H. vulgare", "A. thaliana", "T. aestivum", "S. italica", "O. sativa"),
+  Especies = c("Z. mays", "S. bicolor", "H. vulgare", "A. thaliana", "T. aestivum", "S. italica", "O. sativa"),
+  Values = c(27924, 6994, 7860, 34946, 15734, 1595, 22640)
 )
 
 # Definir as cores em formato hex
 colors <- c("Z. mays" = "#FFEB3B", "S. bicolor" = "#1E88E5", "H. vulgare" = "#e31a1c",
-            "A. thaliana" = "#33a02c", "T. aestivum" = "#6a3d9a", "S. italica" = "#E91E63")
+            "A. thaliana" = "#33a02c", "T. aestivum" = "#6a3d9a", "S. italica" = "#E91E63", "O. sativa" = "#f97e43")
 
-# PORTUGUES 
-# Criar o gráfico de barras com cores personalizadas
+# PORTUGUES
 ggplot(data, aes(x = Especies, y = Values, fill = Especies)) +
   geom_bar(stat = "identity") +
+  geom_text(aes(label = Values), vjust = -0.5) + 
   scale_fill_manual(values = colors) +
   theme_minimal() +
   labs(title = "Quantidade de datasets SRA/NCBI",
        x = "Espécie",
-       y = "Total de SRA")
+       y = "Total de SRA") +
+  theme(
+    plot.title = element_text(hjust = 0.5), 
+    axis.text.x = element_text(face = "italic") 
+  )
 
-# INGLES 
-# Criar o gráfico de barras com cores personalizadas
+# INGLES
 ggplot(data, aes(x = Species, y = Values, fill = Species)) +
   geom_bar(stat = "identity") +
+  geom_text(aes(label = Values), vjust = -0.5) + 
   scale_fill_manual(values = colors) +
   theme_minimal() +
   labs(title = "Total datasets (SRA/NCBI) available",
        x = "Species",
-       y = "Total SRA datasets")
+       y = "Total SRA datasets") +
+  theme(
+    plot.title = element_text(hjust = 0.5),  
+    axis.text.x = element_text(face = "italic") 
+  )
