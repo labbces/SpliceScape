@@ -2,3 +2,6 @@ work/
 FTP/
 reads/
 bbduk/
+.nextflow.log*
+SRR*
+
