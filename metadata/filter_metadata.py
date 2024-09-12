@@ -13,6 +13,10 @@ parser.add_argument('-f', '--filters', metavar='filter_column',
                     help='Filter to include rows where specified columns are not empty.', required=False)
 parser.add_argument('-s', '--strand', metavar='strand_info', choices=['PAIRED', 'SINGLE', 'NULL'], nargs='+',
                     help='Filter to include rows where strand_info is PAIRED, SINGLE, or NULL.', required=False)
+parser.add_argument('--create_table', action='store_true',
+                    help="Create filtered_sra_metadata table in the database.")
+parser.add_argument('--output_file', metavar='output.txt',
+                    type=str, help='Output file for saving the sra_id values.', required=True)
 parser.add_argument('--verbose', action='store_true')
 args = parser.parse_args()
 
@@ -20,6 +24,7 @@ db = args.database
 read_length = args.read_length
 filters = args.filters if args.filters else []
 strand = args.strand
+output_file = args.output_file
 
 # Connecting to the database
 conn = sqlite3.connect(db)
@@ -77,19 +82,14 @@ else:
 if args.verbose:
     print(f"Column 'average_read_length' filled up.")
 
-# Create filtered_sra_metadata table if it doesn't exist
-create_table_query = """
-CREATE TABLE IF NOT EXISTS filtered_sra_metadata AS
-SELECT * FROM sra_metadata WHERE 1=0
-"""
-cursor.execute(create_table_query)
-
 # Base queries
 count_query = "SELECT COUNT(*) FROM sra_metadata WHERE 1=1"
+select_query = "SELECT sra_id FROM sra_metadata WHERE 1=1"
 insert_query = """
 INSERT INTO filtered_sra_metadata
 SELECT * FROM sra_metadata
 WHERE 1=1
+AND sra_id NOT IN (SELECT sra_id FROM filtered_sra_metadata)
 """
 
 # Filtering
@@ -97,6 +97,7 @@ params = []
 
 # Read length
 if read_length is not None:
+    select_query += " AND average_read_length >= ?"
     insert_query += " AND average_read_length >= ?"
     count_query += " AND average_read_length >= ?"
     params.append(read_length)
@@ -104,6 +105,7 @@ if read_length is not None:
 # Dynamic filters
 for filter_column in filters:
     if column_exists(cursor, 'sra_metadata', filter_column):
+        select_query += f" AND {filter_column} IS NOT NULL AND {filter_column} != ''"
         insert_query += f" AND {filter_column} IS NOT NULL AND {filter_column} != ''"
         count_query += f" AND {filter_column} IS NOT NULL AND {filter_column} != ''"
 
@@ -117,16 +119,16 @@ if strand:
                 first_condition = False
             else:
                 condition = "OR"
+            select_query += f" {condition} (strand_info IS NULL OR strand_info = '')"
             insert_query += f" {condition} (strand_info IS NULL OR strand_info = '')"
-            count_query += f" {condition} (strand_info IS NULL OR strand_info = '')"
         if 'PAIRED' in strand:
             if first_condition:
                 condition = "AND"
                 first_condition = False
             else:
                 condition = "OR"
+            select_query += f" {condition} strand_info = ?"
             insert_query += f" {condition} strand_info = ?"
-            count_query += f" {condition} strand_info = ?"
             params.append('PAIRED')
         if 'SINGLE' in strand:
             if first_condition:
@@ -134,25 +136,41 @@ if strand:
                 first_condition = False
             else:
                 condition = "OR"
+            select_query += f" {condition} strand_info = ?"
             insert_query += f" {condition} strand_info = ?"
-            count_query += f" {condition} strand_info = ?"
             params.append('SINGLE')
     else:
         print("Column 'strand_info' does not exist in 'sra_metadata'.")
         conn.close()
         sys.exit()
 
-# Execute the queries
-cursor.execute(insert_query, params)
-conn.commit()
+# Option to create filtered_sra_metadata table
+if args.create_table:
+    # Create filtered_sra_metadata table if it doesn't exist
+    create_table_query = """
+    CREATE TABLE IF NOT EXISTS filtered_sra_metadata AS
+    SELECT * FROM sra_metadata WHERE 1=0
+    """
+    cursor.execute(create_table_query)
 
-# Fetch filtered results
-cursor.execute(count_query, params)
-filtered_row_count = cursor.fetchone()[0]
+    # Insert filtered data into filtered_sra_metadata only if not already present
+    cursor.execute(insert_query, params)
+    conn.commit()
+
+    if args.verbose:
+        print(f"Table 'filtered_sra_metadata' created and filled with filtered data.")
+
+# Fetch sra_id values and export them to the output file
+cursor.execute(select_query, params)
+sra_ids = cursor.fetchall()
+
+# Write the sra_id values to the output file
+with open(output_file, 'w') as f:
+    for sra_id in sra_ids:
+        f.write(f"{sra_id[0]}\n")
 
 if args.verbose:
-    print(
-        f"Filtering done! {filtered_row_count} rows remaining in 'filtered_sra_metadata'.")
+    print(f"sra_id values saved to {output_file}.")
 
 # Close the connection
 conn.close()
