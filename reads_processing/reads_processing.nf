@@ -2,7 +2,7 @@
 params.reads_file = "srr_list.txt"     
 params.bbduk = "/Storage/progs/bbmap_35.85/bbduk2.sh" // no cluster no CENA
 // params.bbduk = "/home/beatrizestevam/progs/BBMap_35.85/bbmap/bbduk2.sh" // no computador do CENA
-params.rref = "/Storage/progs/Trimmomatic-0.38/adapters/NexteraPE-PE.fa"
+params.rref = "/Storage/progs/BBMap/resources/adapters.fa"
 params.minlength = 60
 params.trimq = 20
 params.k = 27
