@@ -1,4 +1,5 @@
-params.reads = "SRR28642269"
+// params.reads = "SRR28642269"
+params.reads_file = "srr_list.txt"     
 params.bbduk = "/Storage/progs/bbmap_35.85/bbduk2.sh" // no cluster no CENA
 // params.bbduk = "/home/beatrizestevam/progs/BBMap_35.85/bbmap/bbduk2.sh" // no computador do CENA
 params.rref = "/Storage/progs/Trimmomatic-0.38/adapters/NexteraPE-PE.fa"
@@ -6,6 +7,8 @@ params.minlength = 60
 params.trimq = 20
 params.k = 27
 params.maxmem = 20
+
+
 
 // Getting FTP from SRA 
 
@@ -19,6 +22,7 @@ process getReadFTP {
     path "${sra_accession}.json"
 
     """
+    sleep 0.6
     ffq --ftp -o "${sra_accession}.json" $sra_accession
     """
 }
@@ -76,13 +80,13 @@ process runBBDuK{
 
 
 workflow {
-    reads = params.reads 
     bbduk = params.bbduk 
     rref = params.rref
     minlength = params.minlength 
     trimq = params.trimq 
     k = params.k 
 
-    genjson = channel.of(reads) | getReadFTP | downloadReadFTP
-    running_bbduk = runBBDuK(genjson, reads, minlength, trimq, k, rref)
+    read_id = Channel.fromPath(params.reads_file).splitText().map { line -> line.trim() }.filter { line -> !line.isEmpty() }
+    genjson = getReadFTP(read_id) | downloadReadFTP
+    running_bbduk = runBBDuK(genjson, read_id, minlength, trimq, k, rref)
     }
