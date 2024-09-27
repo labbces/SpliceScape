@@ -1,0 +1,6 @@
+2024-08-19 15:54:44	27.7s	evil_nobel	ERR	86d2c599b0b7e798079f024f21beaca6	b1cf7b15-22a5-4851-be2c-d422596048ce	nextflow run reads_processing.nf
+2024-08-19 15:57:35	20s	boring_church	ERR	736ba7e8c4a4e6b35b5aabb9e3d83027	463df6ea-e28f-4833-9bde-e39ac5b09a6e	nextflow run reads_processing.nf
+2024-08-19 16:01:36	36.2s	extravagant_payne	ERR	430564366dc0ea92292af4ed4bebd43b	f9058bb3-58c1-4aba-9829-edbc6bc61d77	nextflow run reads_processing.nf
+2024-08-19 16:08:10	22.8s	fervent_williams	ERR	f8628cd8e06deb35e016ec29c605670b	c49b22bf-790c-495a-82f3-980750f4fd6d	nextflow run reads_processing.nf
+2024-08-19 16:14:41	28.3s	stoic_kalman	ERR	2007733ecd10f4d8caec9aec45bdb514	86d1ad36-5ad0-40eb-8f23-e9af8f1be300	nextflow run reads_processing.nf
+2024-08-19 16:17:07	35.6s	sick_volhard	OK	5f8b553df0f34fc580f5ae5301cbd298	5facc882-ea18-402d-a678-6417ac5c37fa	nextflow run reads_processing.nf

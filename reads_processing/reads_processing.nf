@@ -13,8 +13,8 @@ params.maxmem = 20
 // Getting FTP from SRA 
 
 process getReadFTP {
-    publishDir "$projectDir/FTP", mode: 'copy'
-    container 'andreatelatin/getreads:2.0'
+    publishDir "$projectDir/FTP"
+    maxForks 2
     input:
     val sra_accession
 
@@ -22,15 +22,15 @@ process getReadFTP {
     path "${sra_accession}.json"
 
     """
-    sleep 0.6
     ffq --ftp -o "${sra_accession}.json" $sra_accession
+    sleep 1
     """
 }
 
 // Download reads from FTP file
 
 process downloadReadFTP {
-    publishDir "$projectDir/reads", mode: 'copy'
+    publishDir "$projectDir/reads"
     input:
         path json_file
 
@@ -45,7 +45,7 @@ process downloadReadFTP {
 
 // Cleaning reads with BBDuK
 process runBBDuK{   
-    publishDir "$projectDir/bbduk", mode: 'copy'
+    publishDir "$projectDir/bbduk"
     input:
         tuple path(reads1), path(reads2)
         val sra_accession
