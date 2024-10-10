@@ -48,6 +48,8 @@ try:
                         print(f"MD5 matches for {file_name}")
                     break
                 else:
+                    print(f"removing file {file_name}")
+
                     os.remove(file_name)
 
             subprocess.run(["wget", ftp], check=True)
@@ -64,6 +66,7 @@ try:
                 if args.verbose:
                     print(f"MD5 does not match for {file_name}. Attempt {attempt + 1} of {max_retries}.")
                 attempt += 1
+                os.remove(file_name)
         else:
             if not os.path.exists(failed_file):
                 with open(failed_file, 'w') as f:

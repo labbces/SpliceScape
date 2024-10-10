@@ -31,6 +31,7 @@ process getReadFTP {
 
 process downloadReadFTP {
     publishDir "$projectDir/reads"
+    errorStrategy 'ignore'
     input:
         path json_file
 
@@ -46,6 +47,8 @@ process downloadReadFTP {
 // Cleaning reads with BBDuK
 process runBBDuK{   
     publishDir "$projectDir/bbduk"
+    errorStrategy 'retry'
+    maxRetries 3
     input:
         tuple path(reads1), path(reads2)
         val sra_accession
