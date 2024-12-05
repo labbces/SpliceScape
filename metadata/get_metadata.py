@@ -69,7 +69,7 @@ conn2sra_metadata_db = sqlite3.connect(database_name)
 
 c = conn2sra_metadata_db.cursor()
 
-# CREATE TABLE sra_metadata (if necessary)
+'''# CREATE TABLE sra_metadata (if necessary)
 c.execute("""CREATE TABLE IF NOT EXISTS sra_metadata (
         sra_id TEXT UNIQUE,
         strand_info TEXT,
@@ -90,7 +90,7 @@ c.execute("""CREATE TABLE IF NOT EXISTS sra_metadata (
         source_name TEXT,
         pmid INTEGER,
         layout TEXT
-        )""")
+        )""")'''
 
 conn2sra_metadata_db.commit()
 
@@ -124,6 +124,7 @@ if args.verbose:
             f'There is probably more than 10,000 datasets available for {input_species}.')
 
 time.sleep(1)
+'''
 query_counter = 0
 for exp_id in copy_record_idlist:
     if args.verbose:
@@ -422,3 +423,4 @@ if args.summary_stats:
 c.close()
 
 conn2sra_metadata_db.close()
+'''

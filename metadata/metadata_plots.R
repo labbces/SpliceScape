@@ -8,7 +8,14 @@ library(ggplot2)
 data <- data.frame(
   Species = c("Z. mays", "S. bicolor", "H. vulgare", "A. thaliana", "T. aestivum", "S. italica", "O. sativa"),
   Especies = c("Z. mays", "S. bicolor", "H. vulgare", "A. thaliana", "T. aestivum", "S. italica", "O. sativa"),
-  Values = c(27924, 6994, 7860, 34946, 15734, 1595, 22640)
+  Values = c(27942, 7154, 8141, 28156, 16118, 1606, 23034)
+)
+
+# Dados filtrados
+data <- data.frame(
+  Species = c("Z. mays", "S. bicolor", "H. vulgare", "A. thaliana", "T. aestivum", "S. italica", "O. sativa"),
+  Especies = c("Z. mays", "S. bicolor", "H. vulgare", "A. thaliana", "T. aestivum", "S. italica", "O. sativa"),
+  Values = c(26591, 8006,23034, )
 )
 
 # Definir as cores em formato hex
