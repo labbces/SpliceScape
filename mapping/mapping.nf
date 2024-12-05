@@ -1,3 +1,9 @@
+// 
+params.threads = "srr_list.txt"     
+params.genome = // it needs to be a .fa
+params.annotation = // needs to be gene_exon .gff3
+params.outFileNamePrefix = 
+
 // params.reads = "SRR28642269"
 params.reads_file = "srr_list.txt"     
 params.bbduk = "/Storage/progs/bbmap_35.85/bbduk2.sh" // no cluster no CENA
@@ -59,8 +65,7 @@ process runBBDuK{
                
     
     output:
-        path('*.trimmed.R1.fastq.gz')
-        path('*.trimmed.R2.fastq.gz')
+        tuple path("${sra_accession}.trimmed.R1.fastq.gz"), path("${sra_accession}.trimmed.R2.fastq.gz") 
     
     script: 
     def raw = "in1=${reads1} in2=${reads2}"
@@ -79,11 +84,67 @@ process runBBDuK{
         &> ${sra_accession}.bbduk.log
     """
 }  
+
 // /Storage/progs/bbmap_35.85/bbduk2.sh -Xmx40g threads=4 in1="SRR28642268_1.fastq.gz" in2="SRR28642268_2.fastq.gz" out1="SRR28642268.trimmed.R1.fastq.gz"  out2="SRR28642268.trimmed.R2.fastq.gz" ref="/Storage/progs/Trimmomatic-0.38/adapters/TruSeq3-SE.fa" minlength=60 qtrim=w trimq=20 showspeed=t k=27 overwrite=true > bbduk.log 2>&1
 
 
+process getGenomeInfo{   
+    publishDir "$projectDir/genome_info"
+    input:
+        path gemomeDir
+        path genomeFasta
+        path genomeGTF
+    
+    output:
+        path("chrLength.txt")            
+        path("chrStart.txt")
+        path("geneInfo.tab")
+        path("Log.out")
+        path("sjdbInfo.txt")
+        path("transcriptInfo.tab")
+        path("chrNameLength.txt")
+        path("exonGeTrInfo.tab")
+        path("Genome")
+        path("SA")
+        path("sjdbList.fromGTF.out.tab")
+        path("chrName.txt")
+        path("exonInfo.tab")
+        path("genomeParameters.txt")
+        path("SAindex")
+        path("sjdbList.out.tab")
+    
+    script: 
+    """
+    STAR --runMode genomeGenerate \
+        --genomeDir $gemomeDir \
+        --genomeFastaFiles $genomeFasta\
+        --sjdbGTFfile $genomeGTF \
+    """
+}  
+
+process mapping{   
+    publishDir "$projectDir/star"
+    input:
+        path gemomeDir
+        val outFileNamePrefix
+        tuple path(reads1), path(reads2)
 
 
+    
+    output:
+        path("chrLength.txt")            
+
+    
+    script: 
+    def reads = "${reads1} ${reads2}"
+    """
+    STAR--genomeDir $gemomeDir  \
+        --outFileNamePrefix  $outFileNamePrefix \
+        --outSAMtype BAM SortedByCoordinate \
+        --readFilesIn $reads \
+        --readFilesCommand zcat
+    """
+}  
 
 
 
@@ -94,8 +155,16 @@ workflow {
     minlength = params.minlength 
     trimq = params.trimq 
     k = params.k 
+    genome_fasta = params.genome
+    genome_annotation = params.annotation
+    prefix = params.outFileNamePrefix
 
+    getGenomeInfo("$projectDir/genome_info", genome_fasta, genome_annotation)
     read_id = Channel.fromPath(params.reads_file).splitText().map { line -> line.trim() }.filter { line -> !line.isEmpty() }
     genjson = getReadFTP(read_id) | downloadReadFTP
     running_bbduk = runBBDuK(genjson, read_id, minlength, trimq, k, rref)
+    mapping("$projectDir/star", prefix, running_bbduk)
+
     }
+
+
