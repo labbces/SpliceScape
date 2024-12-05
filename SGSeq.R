@@ -11,26 +11,19 @@ library(txdbmaker)
 library(DBI)
 library(RSQLite)
 
-# Define the arguments directly in the script
-sra_id <- "SRR25663954"                                           # Sample ID
-bam_file_path <- "/home/bia/LandscapeSplicingGrasses/Results/star/Athaliana_447Aligned.sortedByCoord.out.bam" # BAM file
-gff_path <- "/home/bia/LandscapeSplicingGrasses/data/Phytozome/PhytozomeV12/early_release/Athaliana_447_Araport11/annotation/Athaliana_447_Araport11.gene.gff3.gz" # GFF file
-output_bed_path <- "/home/bia/LandscapeSplicingGrasses/Results/testing_sgseq"   # Output directory
-num_cores <- 1                                                   # Number of cores for processing
-output_gff_path <- "/home/bia/LandscapeSplicingGrasses/Results/testing_sgseq"   # Output directory
-
-# Connect to DB to retrieve metadata
-conn <- dbConnect(RSQLite::SQLite(), db_path)
-
-get_sample_metadata <- function(sra_id) {
-  query <- sprintf("SELECT * FROM sra_metadata WHERE sra_id = '%s'", sra_id)
-  sample_data <- dbGetQuery(conn, query)
-  return(sample_data)
-}
+# Getting arguments from terminal
+args <- commandArgs(trailingOnly = TRUE)
+db_path <- args[1]            # Path to DB (grasses.db)
+sra_id <- args[2]             # sample ID (SRA ID)
+bam_file_path <- args[3]      # Path to BAM - Output from STAR 
+gff_path <- args[4]           # Path to GFF - from Phytozome
+output_bed_path <- args[5]    # Path to output - BED (path, to directory)
+num_cores <- as.integer(args[6]) # Max cores for processing
 
 # Load annotation file
 txdb <- txdbmaker::makeTxDbFromGFF(gff_path, format = "gff3")
 txFeatures <- convertToTxFeatures(txdb)
+
 
 # Get information from BAM - Output from STAR
 sample_info <- data.frame(
@@ -53,29 +46,56 @@ analysis_variants <- analyzeVariants(analysis_results, maxnvariant = 20, include
                                      min_denominator = NA, min_anchor = 1, cores = num_cores)
 
 
-# Annotate
-annotated_variants <- annotate(analysis_variants, txFeatures)
-
-
-
 # Save as bed
 exportSGVariantsToBED <- function(sg_variant_counts, file_name, sra_id) {
+  read_counts <- rowSums(assay(sg_variant_counts))
   variant_data <- as.data.frame(rowData(sg_variant_counts))
-  bed_data <- data.frame(
-    chrom = sub("^[^:]+:([^:]+):.*$", "\\1", variant_data$from),
-    start = as.integer(sub("^[^:]+:[^:]+:(\\d+):.*$", "\\1", variant_data$from)) - 1,
+  
+  gene_names <- ifelse(!is.null(variant_data$geneName), variant_data$geneName, "NA")
+  transcript_names <- ifelse(!is.null(variant_data$txName), variant_data$txName, "NA")
+  
+    bed_data <- data.frame(
+    chrom = tolower(sub("^[^:]+:([^:]+):.*$", "\\1", variant_data$from)),  
+    start = as.integer(sub("^[^:]+:[^:]+:(\\d+):.*$", "\\1", variant_data$from)),
     end = as.integer(sub("^[^:]+:[^:]+:(\\d+):.*$", "\\1", variant_data$to)),
-    name = variant_data$variantName,
+    name = paste0(
+      "ID=", variant_data$variantName,
+      ";read_count=", read_counts,
+      ";SRA_ID=", sra_id,
+      ";gene_name=", gene_names,
+      ";transcript_name=", transcript_names
+    ),    
     score = 0,
-    strand = sub(".*:([^:]+)$", "\\1", variant_data$from),
-    sra_id = sra_id  
+    strand = sub(".*:([^:]+)$", "\\1", variant_data$from)
   )
   
-  write.table(bed_data, file = file_name, quote = FALSE, sep = "\t", row.names = FALSE, col.names = FALSE)
+  bed_data <- within(bed_data, {
+    temp_start <- pmin(start, end)
+    temp_end <- pmax(start, end)
+    start <- temp_start
+    end <- temp_end
+    
+    thickStart <- start 
+    thickEnd <- start
+    
+    
+    rm(temp_start, temp_end) 
+  })
+  
+  track_line <- 'track name="Splicing Variants - SGSeq" description="Splicing variants identified with SGSeq" visibility=3 color=85,107,47 type=bed'
+  write(track_line, file = file_name) 
+  
+  write.table(bed_data, file = file_name, quote = FALSE, sep = "\t", row.names = FALSE, col.names = FALSE, append = TRUE)
 }
 
-output <- paste(output_bed_path,"/","SGSeq","_",sra_id,".bam")
+output <- paste0(output_bed_path, "/SGSeq_", sra_id, ".bed")
+
 exportSGVariantsToBED(annotated_variants, output, sra_id)
+
+
+
+# Running example
+# Rscript SGSeq.R /home/bia/LandscapeSplicingGrasses/data/grasses.db SRR25663954 /home/bia/LandscapeSplicingGrasses/Results/star/Athaliana_447Aligned.sortedByCoord.out.bam /home/bia/LandscapeSplicingGrasses/data/Phytozome/PhytozomeV12/early_release/Athaliana_447_Araport11/annotation/Athaliana_447_Araport11.gene.gff3.gz /home/bia/LandscapeSplicingGrasses/Results/test_SGSeq.bed 1
 
 
 
