@@ -157,4 +157,5 @@ workflow {
 
     genome_gen = genomeGenerateSTAR(genomeFASTA, genomeGFF, threads, species)
     mapping = mappingSTAR(running_bbduk, genome_gen, threads, species, read_id)
+    
     }
