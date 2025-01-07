@@ -123,7 +123,7 @@ process mappingSTAR{
         val sra_accession
 
     output:
-        tuple path("${species}/${sra_accession}", "${species}/${sra_accession}/${species}_${sra_accession}_*.bam.bai"), path("${species}/${sra_accession}/${species}_${sra_accession}_*.bam")
+        tuple path("${species}/${sra_accession}"), path("${species}/${sra_accession}/${species}_${sra_accession}_*.bam.bai"), path("${species}/${sra_accession}/${species}_${sra_accession}_*.bam")
 
 
     script: 
