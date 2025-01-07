@@ -11,6 +11,7 @@ params.genomeFASTA = "/home/bia.estevam/landscapeSplicingGrasses/data/Phytozome/
 params.genomeGFF = "/home/bia.estevam/landscapeSplicingGrasses/data/Phytozome/PhytozomeV12/early_release/Athaliana_447_Araport11/annotation/Athaliana_447_Araport11.gene_exons.gff3"
 params.threads = 10
 params.species = "Athaliana_447"
+params.majiq_path = "/home/bia.estevam/landscapeSplicingGrasses/majiq/bin"
 
 
 
@@ -112,7 +113,7 @@ process genomeGenerateSTAR{
 
 // mapping with STAR - Mapping
 process mappingSTAR{   
-    publishDir "$genome_index_dir/mapping"  
+    publishDir "$projectDir/STAR_mapping"  
     errorStrategy 'finish'
     input:
         tuple path(reads1), path(reads2)
@@ -122,11 +123,11 @@ process mappingSTAR{
         val sra_accession
 
     output:
-        path("${species}_${sra_accession}_*")
+        tuple path("${species}/${sra_accession}/${species}_${sra_accession}_*.bam.bai"), path("${species}/${sra_accession}/${species}_${sra_accession}_*.bam")
 
     script: 
     def genDir = "${genome_index_dir}"
-    def fileNamePrefix = "${species}_${sra_accession}_"
+    def fileNamePrefix = "${species}/${sra_accession}/${species}_${sra_accession}_"
     def reads = "${reads1} ${reads2}"
     """
     STAR --runThreadN ${threads} \
@@ -135,9 +136,86 @@ process mappingSTAR{
         --outSAMtype BAM SortedByCoordinate \
         --readFilesIn ${reads} \
         --readFilesCommand zcat \
-        --outSAMstrandField intronMotif
+        --outSAMstrandField intronMotif \
+        --twopassMode Basic 
     """
 }
+
+
+// splicing analysis - SGSeq
+process SGSeq{   
+    publishDir "$projectDir/SGSeq"  
+    errorStrategy 'finish'
+    input:
+        val sra_accession
+        path mapping_bam
+        path genomeGFF
+        val cores
+
+
+    output:
+        path("${species}_${sra_accession}.SGSeq.bed")
+
+    script: 
+    def fileNamePrefix = "${species}/${species}_${sra_accession}_"
+    """
+    SGSeq.R ${sra_accession} ${mapping_bam} ${genomeGFF} $fileNamePrefix ${cores}
+    """
+}
+
+
+// Setting file generator for majiq
+process majiq_setting{   
+    publishDir "$projectDir/MAJIQ"  
+    errorStrategy 'finish'
+    input:
+        val species
+        val sra_accession
+
+    output:
+        path("settings/${species}/settings_${species}_${sra_accession}.ini")
+
+    script: 
+    def settings_output_directory = "settings/${species}/"
+    def bamdirs = "$projectDir/STAR_mapping/${species}/${sra_accession}"
+    def fileNamePrefix = "${species}_${sra_accession}_"
+
+    """
+    output_file="$settings_output_directory/settings_${species}_${sra_accession}.ini"
+    echo "[info]" > "$settings_output_directory"
+    echo "bamdirs=$bamdirs" >> "$settings_output_directory"  
+    echo "genome=${species}" >> "$settings_output_directory"
+    echo "genome_path=${genome}" >> "$settings_output_directory"
+    echo "" >> "$settings_output_directory"
+    echo "[experiments]" >> "$settings_output_directory"
+    echo "$fileNamePrefix=$fileNamePrefix" >> "$settings_output_directory" 
+    """
+}
+
+
+// splicing analysis - MAJIQ
+process MAJIQ{   
+    publishDir "$projectDir/MAJIQ"  
+    errorStrategy 'finish'
+    input:
+        path majiq_path // add
+        path genomeGFF
+        path settings_file
+
+    output:
+        path ("psi/${species}/${species}_${sra_accession}/${sra_accession}.psi.tsv")
+        path ("psi/${species}/${species}_${sra_accession}/${sra_accession}.psi.voila")
+        path ("psi/${species}/${species}_${sra_accession}/psi_majiq.log")
+
+    script: 
+    def build_output_directory = "build_output/${species}/${species}_${sra_accession}"
+    def psi_output_directory = "psi/${species}/${species}_${sra_accession}"
+    """
+    ${majiq_path}/majiq build ${genomeGFF} --conf ${settings_file} --output $build_output_directory
+    ${majiq_path}/majiq psi $build_output_directory/*.majiq --name $sra_accession --output $psi_output_directory
+    """
+}
+
 
 
 workflow {
@@ -150,6 +228,7 @@ workflow {
     genomeGFF = params.genomeGFF
     threads = params.threads
     species = params.species
+    majiq_path = params.majiq_path
 
     read_id = Channel.fromPath(params.reads_file).splitText().map { line -> line.trim() }.filter { line -> !line.isEmpty() }
     genjson = getReadFTP(read_id) | downloadReadFTP
@@ -157,5 +236,8 @@ workflow {
 
     genome_gen = genomeGenerateSTAR(genomeFASTA, genomeGFF, threads, species)
     mapping = mappingSTAR(running_bbduk, genome_gen, threads, species, read_id)
+
+    majiq_setting = majiq_setting(species, read_id)
+    majiq = MAJIQ(majiq_path, genomeGFF, majiq_setting)
     
     }
