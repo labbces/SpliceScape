@@ -199,7 +199,7 @@ process MAJIQ{
     publishDir "$projectDir/MAJIQ"  
     errorStrategy 'finish'
     input:
-        path majiq_path // add
+        path majiq_path 
         path genomeGFF
         path settings_file
 
@@ -238,7 +238,7 @@ workflow {
     genome_gen = genomeGenerateSTAR(genomeFASTA, genomeGFF, threads, species)
     mapping = mappingSTAR(running_bbduk, genome_gen, threads, species, read_id)
 
-    majiq_setting = majiq_setting(species, read_id)
+    majiq_setting = majiq_setting(mapping,species, read_id)
     majiq = MAJIQ(majiq_path, genomeGFF, majiq_setting)
     
     }
