@@ -123,7 +123,8 @@ process mappingSTAR{
         val sra_accession
 
     output:
-        tuple path("${species}/${sra_accession}/${species}_${sra_accession}_*.bam.bai"), path("${species}/${sra_accession}/${species}_${sra_accession}_*.bam")
+        tuple path("${species}/${sra_accession}", "${species}/${sra_accession}/${species}_${sra_accession}_*.bam.bai"), path("${species}/${sra_accession}/${species}_${sra_accession}_*.bam")
+
 
     script: 
     def genDir = "${genome_index_dir}"
@@ -169,6 +170,7 @@ process majiq_setting{
     publishDir "$projectDir/MAJIQ"  
     errorStrategy 'finish'
     input:
+        tuple path(bam_dir), path(bam_index), path(bam_file)
         val species
         val sra_accession
 
@@ -177,13 +179,12 @@ process majiq_setting{
 
     script: 
     def settings_output_directory = "settings/${species}/"
-    def bamdirs = "$projectDir/STAR_mapping/${species}/${sra_accession}"
     def fileNamePrefix = "${species}_${sra_accession}_"
 
     """
     output_file="$settings_output_directory/settings_${species}_${sra_accession}.ini"
     echo "[info]" > "$settings_output_directory"
-    echo "bamdirs=$bamdirs" >> "$settings_output_directory"  
+    echo "bamdirs=${bam_dir}" >> "$settings_output_directory"  
     echo "genome=${species}" >> "$settings_output_directory"
     echo "genome_path=${genome}" >> "$settings_output_directory"
     echo "" >> "$settings_output_directory"
