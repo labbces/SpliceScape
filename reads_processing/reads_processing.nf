@@ -123,7 +123,7 @@ process mappingSTAR{
         val sra_accession
 
     output:
-        tuple path("${species}/${sra_accession}"), path("${species}/${sra_accession}/${species}_${sra_accession}_*.bam.bai"), path("${species}/${sra_accession}/${species}_${sra_accession}_*.bam")
+        tuple path("${species}/${sra_accession}", "${species}/${sra_accession}/${species}_${sra_accession}_*.bam.bai"), path("${species}/${sra_accession}/${species}_${sra_accession}_*.bam")
 
 
     script: 
@@ -139,6 +139,8 @@ process mappingSTAR{
         --readFilesCommand zcat \
         --outSAMstrandField intronMotif \
         --twopassMode Basic 
+    
+    samtools index ${species}/${sra_accession}/${species}_${sra_accession}_Aligned.sortedByCoord.out.bam
     """
 }
 
@@ -238,7 +240,7 @@ workflow {
     genome_gen = genomeGenerateSTAR(genomeFASTA, genomeGFF, threads, species)
     mapping = mappingSTAR(running_bbduk, genome_gen, threads, species, read_id)
 
-    majiq_setting = majiq_setting(mapping,species, read_id)
+    majiq_setting = majiq_setting(,species, read_id)
     majiq = MAJIQ(majiq_path, genomeGFF, majiq_setting)
     
     }
