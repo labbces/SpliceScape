@@ -1,4 +1,5 @@
 // params.reads = "SRR28642269"
+// make sure species name is as it is on Phytozome - at least starts equal
 params.reads_file = "TEST_srr_list.txt"     
 params.bbduk = "/Storage/progs/bbmap_35.85/bbduk2.sh" // no cluster no CENA
 // params.bbduk = "/home/beatrizestevam/progs/BBMap_35.85/bbmap/bbduk2.sh" // no computador do CENA
@@ -12,7 +13,7 @@ params.genomeGFF = "/home/bia.estevam/landscapeSplicingGrasses/data/Phytozome/Ph
 params.threads = 10
 params.species = "Athaliana_447"
 params.majiq_path = "/home/bia.estevam/landscapeSplicingGrasses/majiq/bin"
-
+params.genome = "/home/bia.estevam/landscapeSplicingGrasses/data/Phytozome/PhytozomeV12/early_release/"
 
 
 
@@ -175,6 +176,8 @@ process majiq_setting{
         tuple path(bam_dir), path(bam_index), path(bam_file)
         val species
         val sra_accession
+        val genome 
+
 
     output:
         path("settings/${species}/settings_${species}_${sra_accession}.ini")
@@ -182,13 +185,14 @@ process majiq_setting{
     script: 
     def settings_output_directory = "settings/${species}/"
     def fileNamePrefix = "${species}_${sra_accession}_"
+    def genome_path = "$genome/${species}*/assembly"
 
     """
     output_file="$settings_output_directory/settings_${species}_${sra_accession}.ini"
     echo "[info]" > "$settings_output_directory"
     echo "bamdirs=${bam_dir}" >> "$settings_output_directory"  
     echo "genome=${species}" >> "$settings_output_directory"
-    echo "genome_path=${genome}" >> "$settings_output_directory"
+    echo "genome_path=${genome_path}" >> "$settings_output_directory"
     echo "" >> "$settings_output_directory"
     echo "[experiments]" >> "$settings_output_directory"
     echo "$fileNamePrefix=$fileNamePrefix" >> "$settings_output_directory" 
