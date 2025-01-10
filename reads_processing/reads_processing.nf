@@ -13,7 +13,8 @@ params.genomeGFF = "/home/bia.estevam/landscapeSplicingGrasses/data/Phytozome/Ph
 params.threads = 10
 params.species = "Athaliana_447"
 params.majiq_path = "/home/bia.estevam/landscapeSplicingGrasses/majiq/bin"
-params.genome = "/home/bia.estevam/landscapeSplicingGrasses/data/Phytozome/PhytozomeV12/early_release/Athaliana_447_Araport11/assembly"
+params.genome = "/home/bia.estevam/landscapeSplicingGrasses/data/Phytozome/PhytozomeV12/early_release"
+params.genome_path = "/home/bia.estevam/landscapeSplicingGrasses/data/Phytozome/PhytozomeV12/early_release/Athaliana_447_Araport11/assembly"
 
 
 
@@ -229,6 +230,7 @@ workflow {
     species = params.species
     majiq_path = params.majiq_path
     genome = params.genome
+    genome_path = params.genome_path
 
     read_id = Channel.fromPath(params.reads_file).splitText().map { line -> line.trim() }.filter { line -> !line.isEmpty() }
     genjson = getReadFTP(read_id) | downloadReadFTP
@@ -237,7 +239,7 @@ workflow {
     genome_gen = genomeGenerateSTAR(genomeFASTA, genomeGFF, threads, species)
     mapping = mappingSTAR(running_bbduk, genome_gen, threads, species, read_id)
 
-    majiq_setting = majiq_setting(mapping,species, read_id, genome)
+    majiq_setting = majiq_setting(mapping,species, read_id, genome_path)
     // majiq = MAJIQ(majiq_path, genomeGFF, majiq_setting)
     
     }
