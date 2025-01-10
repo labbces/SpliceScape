@@ -46,7 +46,8 @@ bamdirs={bam_dir}
 genome={species}
 genome_path={assembly}
 [experiments]
-{star}={star}"""
+{star}={star}
+"""
     )
 
 print(f"Settings file created at: {output_path}")
