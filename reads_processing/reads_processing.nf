@@ -240,6 +240,6 @@ workflow {
     mapping = mappingSTAR(running_bbduk, genome_gen, threads, species, read_id)
 
     majiq_setting = majiq_setting(mapping,species, read_id, genome_path)
-    // majiq = MAJIQ(majiq_path, genomeGFF, majiq_setting)
+    majiq = MAJIQ(majiq_path, genomeGFF, majiq_setting)
     
     }
