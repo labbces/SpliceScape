@@ -13,7 +13,7 @@ params.genomeGFF = "/home/bia.estevam/landscapeSplicingGrasses/data/Phytozome/Ph
 params.threads = 10
 params.species = "Athaliana_447"
 params.majiq_path = "/home/bia.estevam/landscapeSplicingGrasses/majiq/bin"
-params.genome = "/home/bia.estevam/landscapeSplicingGrasses/data/Phytozome/PhytozomeV12/early_release"
+params.genome = "/home/bia.estevam/landscapeSplicingGrasses/data/Phytozome/PhytozomeV12/early_release/Athaliana_447_Araport11/assembly"
 
 
 
@@ -176,7 +176,7 @@ process majiq_setting{
         tuple path(bam_dir), path(bam_index), path(bam_file)
         val species
         val sra_accession
-        val genome 
+        val genome_path 
 
 
     output:
@@ -184,8 +184,7 @@ process majiq_setting{
 
     script: 
     def settings_output_dic = "settings/${species}/"
-    def fileNamePrefix = "${species}_${sra_accession}_"
-    def genome_path = "$genome/${species}*/assembly"
+    def fileNamePrefix = "${species}_${sra_accession}_Aligned.sortedByCoord.out"
 
     """
     majiq_settings_file_creator.py --output_dic "$settings_output_dic" --species "$species" --sra "$sra_accession" --bam_dir "$bam_dir" --assembly "$genome_path" --output_star "$fileNamePrefix"
