@@ -183,12 +183,11 @@ process majiq_setting{
         path("settings/${species}/settings_${species}_${sra_accession}.ini")
 
     script: 
-    def settings_output_directory = "settings/${species}/"
+    def settings_output_directory = "settings/${species}/settings_${species}_${sra_accession}.ini"
     def fileNamePrefix = "${species}_${sra_accession}_"
     def genome_path = "$genome/${species}*/assembly"
 
     """
-    output_file="$settings_output_directory/settings_${species}_${sra_accession}.ini"
     echo "[info]" > "$settings_output_directory"
     echo "bamdirs=${bam_dir}" >> "$settings_output_directory"  
     echo "genome=${species}" >> "$settings_output_directory"
