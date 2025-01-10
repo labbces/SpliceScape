@@ -176,7 +176,7 @@ process majiq_setting{
     input:
         tuple path(bam_dir), path(bam_index), path(bam_file)
         val species
-        val sra_accession
+        val sra_accessionval sra_accession
         val genome_path 
 
 
@@ -198,6 +198,8 @@ process MAJIQ{
     publishDir "$projectDir/MAJIQ"  
     errorStrategy 'finish'
     input:
+        val species
+        val sra_accession
         path majiq_path 
         path genomeGFF
         path settings_file
@@ -240,6 +242,6 @@ workflow {
     mapping = mappingSTAR(running_bbduk, genome_gen, threads, species, read_id)
 
     majiq_setting = majiq_setting(mapping,species, read_id, genome_path)
-    majiq = MAJIQ(majiq_path, genomeGFF, majiq_setting)
+    majiq = MAJIQ(species, read_id, majiq_path, genomeGFF, majiq_setting)
     
     }
