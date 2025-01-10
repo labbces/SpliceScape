@@ -186,9 +186,9 @@ process majiq_setting{
     script: 
     def settings_output_dic = "settings/${species}/"
     def fileNamePrefix = "${species}_${sra_accession}_Aligned.sortedByCoord.out"
-
+    def bamdir = "$projectDir/STAR_mapping/${species}/${bam_dir}"
     """
-    majiq_settings_file_creator.py --output_dic "$settings_output_dic" --species "$species" --sra "$sra_accession" --bam_dir "$bam_dir" --assembly "$genome_path" --output_star "$fileNamePrefix"
+    majiq_settings_file_creator.py --output_dic "$settings_output_dic" --species "$species" --sra "$sra_accession" --bam_dir "$bamdir" --assembly "$genome_path" --output_star "$fileNamePrefix"
     """
 }
 
