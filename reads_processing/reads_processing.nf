@@ -176,7 +176,7 @@ process majiq_setting{
     input:
         tuple path(bam_dir), path(bam_index), path(bam_file)
         val species
-        val sra_accessionval sra_accession
+        val sra_accession
         val genome_path 
 
 
