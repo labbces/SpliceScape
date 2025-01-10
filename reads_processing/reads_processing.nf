@@ -182,19 +182,18 @@ process majiq_setting{
     output:
         path("settings/${species}/settings_${species}_${sra_accession}.ini")
 
-    script: 
-    def settings_output_directory = "settings/${species}/settings_${species}_${sra_accession}.ini"
-    def fileNamePrefix = "${species}_${sra_accession}_"
-    def genome_path = "$genome/${species}*/assembly"
-
+    script:
+    def output_dir = "${settings_output_directory}/settings_${genome}"
+    def output_file = "${output_dir}/settings_${genome}_${sra_accession}.ini"
     """
-    echo "[info]" > "$settings_output_directory"
-    echo "bamdirs=${bam_dir}" >> "$settings_output_directory"  
-    echo "genome=${species}" >> "$settings_output_directory"
-    echo "genome_path=${genome_path}" >> "$settings_output_directory"
-    echo "" >> "$settings_output_directory"
-    echo "[experiments]" >> "$settings_output_directory"
-    echo "$fileNamePrefix=$fileNamePrefix" >> "$settings_output_directory" 
+    mkdir -p ${output_dir}
+    echo "[info]" > ${output_file}
+    echo "bamdirs=${sra_accession}" >> ${output_file}
+    echo "genome=${genome}" >> ${output_file}
+    echo "genome_path=${genome_path}" >> ${output_file}
+    echo "" >> ${output_file}
+    echo "[experiments]" >> ${output_file}
+    echo "${genome}_${sra_accession}_=${genome}_${sra_accession}_" >> ${output_file}
     """
 }
 
