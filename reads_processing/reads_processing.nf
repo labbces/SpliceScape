@@ -188,7 +188,7 @@ process majiq_setting{
     def genome_path = "$genome/${species}*/assembly"
 
     """
-    majiq_settings_file_creator.py --output_dic "$settings_output_dic" --species "$species" --sra "$sra_accession" --bam_dirs "$bam_dir" --assembly "$genome_path" --output_star "$fileNamePrefix"
+    majiq_settings_file_creator.py --output_dic "$settings_output_dic" --species "$species" --sra "$sra_accession" --bam_dir "$bam_dir" --assembly "$genome_path" --output_star "$fileNamePrefix"
     """
 }
 
