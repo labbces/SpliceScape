@@ -15,7 +15,7 @@ parser.add_argument("--bam_dir", type=str,
                     help="Path to directory where BAM and BAM index are located", required=True)
 parser.add_argument("--assembly", type=str,
                     help="Path to Phytozome assembly directory", required=True)
-parser.add_argument("--output_STAR", type=str,
+parser.add_argument("--output_star", type=str,
                     help="STAR outFileNamePrefix", required=True)
 args = parser.parse_args()
 
@@ -24,7 +24,7 @@ species = args.species
 sra = args.sra
 bam_dir = args.bam_dir
 assembly = args.assembly
-star = args.output_STAR
+star = args.output_star
 output_dic = args.output_dic.strip()
 
 # Ensure the output directory has a trailing slash
