@@ -183,20 +183,19 @@ process majiq_setting{
         path("settings/${species}/settings_${species}_${sra_accession}.ini")
 
     script: 
-    def output_dir = "settings/${species}"
-    def output_file = "$output_dir/settings_${species}_${sra_accession}.ini"
+    def settings_output_directory = "settings/${species}/"
     def fileNamePrefix = "${species}_${sra_accession}_"
     def genome_path = "$genome/${species}*/assembly"
 
     """
-    mkdir -p ${output_dir}
-    echo "[info]" > "$output_file"
-    echo "bamdirs=${bam_dir}" >> "$output_file"  
-    echo "genome=${species}" >> "$output_file"
-    echo "genome_path=${genome_path}" >> "$output_file"
-    echo "" >> "$output_file"
-    echo "[experiments]" >> "$output_file"
-    echo "$fileNamePrefix=$fileNamePrefix" >> "$output_file" 
+    output_file="$settings_output_directory/settings_${species}_${sra_accession}.ini"
+    echo "[info]" > "$settings_output_directory"
+    echo "bamdirs=${bam_dir}" >> "$settings_output_directory"  
+    echo "genome=${species}" >> "$settings_output_directory"
+    echo "genome_path=${genome_path}" >> "$settings_output_directory"
+    echo "" >> "$settings_output_directory"
+    echo "[experiments]" >> "$settings_output_directory"
+    echo "$fileNamePrefix=$fileNamePrefix" >> "$settings_output_directory" 
     """
 }
 
@@ -246,7 +245,7 @@ workflow {
     genome_gen = genomeGenerateSTAR(genomeFASTA, genomeGFF, threads, species)
     mapping = mappingSTAR(running_bbduk, genome_gen, threads, species, read_id)
 
-    majiq_setting = majiq_setting(mapping,species, read_id, genome)
-    majiq = MAJIQ(majiq_path, genomeGFF, majiq_setting)
+    // majiq_setting = majiq_setting(mapping,species, read_id, genome)
+    // majiq = MAJIQ(majiq_path, genomeGFF, majiq_setting)
     
     }
