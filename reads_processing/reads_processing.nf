@@ -241,7 +241,7 @@ workflow {
     genome_gen = genomeGenerateSTAR(genomeFASTA, genomeGFF, threads, species)
     mapping = mappingSTAR(running_bbduk, genome_gen, threads, species, read_id)
 
-    // majiq_setting = majiq_setting(mapping,species, read_id, genome_path)
+    majiq_setting = majiq_setting(mapping,species, read_id, genome_path)
     // majiq = MAJIQ(species, read_id, majiq_path, genomeGFF, majiq_setting)
     
     }
