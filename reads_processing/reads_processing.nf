@@ -27,7 +27,7 @@ process getReadFTP {
     val sra_accession
 
     output:
-    path "${sra_accession}.json"
+    tuple path("${sra_accession}.json"), val(sra_accession)
 
     """
     ffq --ftp -o "${sra_accession}.json" $sra_accession
@@ -41,11 +41,11 @@ process downloadReadFTP {
     publishDir "$projectDir/reads", overwrite: false
     errorStrategy 'ignore'
     input:
-        path json_file
+        tuple path(json_file), val(sra_accession)
 
     output:
         // path '*.fastq.gz'
-        tuple path('*_1.fastq.gz'), path(('*_2.fastq.gz'))
+        tuple path('*_1.fastq.gz'), path('*_2.fastq.gz'), val(sra_accession)
     
     """
     download_from_json.py --json $json_file
@@ -58,8 +58,7 @@ process runBBDuK{
     errorStrategy 'retry'
     maxRetries 3
     input:
-        tuple path(reads1), path(reads2)
-        val sra_accession
+        tuple path(reads1), path(reads2), val(sra_accession)
         val minlength
         val trimq
         val k
@@ -67,7 +66,7 @@ process runBBDuK{
                
     
     output:
-        tuple path('*.trimmed.R1.fastq.gz'), path('*.trimmed.R2.fastq.gz')
+        tuple path('*.trimmed.R1.fastq.gz'), path('*.trimmed.R2.fastq.gz'), val(sra_accession)
     
     script: 
     def raw = "in1=${reads1} in2=${reads2}"
@@ -118,14 +117,13 @@ process mappingSTAR{
     publishDir "$projectDir/STAR_mapping"  
     errorStrategy 'finish'
     input:
-        tuple path(reads1), path(reads2)
+        tuple path(reads1), path(reads2), val(sra_accession)
         path genome_index_dir
         val threads
         val species
-        val sra_accession
 
     output:
-        tuple path("${species}/${sra_accession}"), path("${species}/${sra_accession}/${species}_${sra_accession}_*.bam.bai"), path("${species}/${sra_accession}/${species}_${sra_accession}_*.bam")
+        tuple path("${species}/${sra_accession}"), path("${species}/${sra_accession}/${species}_${sra_accession}_*.bam.bai"), path("${species}/${sra_accession}/${species}_${sra_accession}_*.bam"), val(sra_accession)
 
 
     script: 
@@ -174,14 +172,13 @@ process majiq_setting{
     publishDir "$projectDir/MAJIQ"  
     errorStrategy 'finish'
     input:
-        tuple path(bam_dir), path(bam_index), path(bam_file)
+        tuple path(bam_dir), path(bam_index), path(bam_file), val(sra_accession)
         val species
-        val sra_accession
         val genome_path 
 
 
     output:
-        path("settings/${species}/majiq_settings_${species}_${sra_accession}.ini")
+        tuple path("settings/${species}/majiq_settings_${species}_${sra_accession}.ini"), val(sra_accession)
 
     script: 
     def settings_output_dic = "settings/${species}/"
@@ -199,10 +196,9 @@ process MAJIQ{
     errorStrategy 'finish'
     input:
         val species
-        val sra_accession
         path majiq_path 
         path genomeGFF
-        path settings_file
+        tuple path(settings_file), val(sra_accession)
 
     output:
         path ("psi/${species}/${species}_${sra_accession}/${sra_accession}.psi.tsv")
@@ -234,14 +230,16 @@ workflow {
     genome = params.genome
     genome_path = params.genome_path
 
-    read_id = Channel.fromPath(params.reads_file).splitText().map { line -> line.trim() }.filter { line -> !line.isEmpty() }
-    genjson = getReadFTP(read_id) | downloadReadFTP
-    running_bbduk = runBBDuK(genjson, read_id, minlength, trimq, k, rref)
-
     genome_gen = genomeGenerateSTAR(genomeFASTA, genomeGFF, threads, species)
-    mapping = mappingSTAR(running_bbduk, genome_gen, threads, species, read_id)
 
-    majiq_setting = majiq_setting(mapping,species, read_id, genome_path)
-    majiq = MAJIQ(species, read_id, majiq_path, genomeGFF, majiq_setting)
+    read_id = Channel.fromPath(params.reads_file).splitText().map { line -> line.trim() }.filter { line -> !line.isEmpty() }
+    genjson = getReadFTP(read_id) | downloadReadFTP 
+    
+    running_bbduk = runBBDuK(genjson, minlength, trimq, k, rref)
+
+    mapping = mappingSTAR(running_bbduk, genome_gen, threads, species)
+
+    majiq_setting = majiq_setting(mapping,species, genome_path)
+    majiq = MAJIQ(species, majiq_path, genomeGFF, majiq_setting)
     
     }
