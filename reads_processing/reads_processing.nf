@@ -15,7 +15,7 @@ params.species = "Athaliana_447"
 params.majiq_path = "/home/bia.estevam/landscapeSplicingGrasses/majiq/bin"
 params.genome = "/home/bia.estevam/landscapeSplicingGrasses/data/Phytozome/PhytozomeV12/early_release"
 params.genome_path = "/home/bia.estevam/landscapeSplicingGrasses/data/Phytozome/PhytozomeV12/early_release/Athaliana_447_Araport11/assembly"
-
+params.sgseq_cores = 4
 
 
 // Getting FTP from SRA 
@@ -146,23 +146,22 @@ process mappingSTAR{
 
 
 // splicing analysis - SGSeq
-process SGSeq{   
+process sgseq{   
     publishDir "$projectDir/SGSeq"  
     errorStrategy 'finish'
     input:
-        val sra_accession
-        path mapping_bam
+        tuple path(bam_dir), path(bam_index), path(bam_file), val(sra_accession)
         path genomeGFF
         val cores
 
 
     output:
-        path("${species}_${sra_accession}.SGSeq.bed")
+        tuple path("${species}/SGSeq_${sra_accession}.csv"), val(sra_accession)
 
     script: 
-    def fileNamePrefix = "${species}/${species}_${sra_accession}_"
+    def fileNamePrefix = "${species}"
     """
-    SGSeq.R ${sra_accession} ${mapping_bam} ${genomeGFF} $fileNamePrefix ${cores}
+    Rscript SGSeq.R --gff ${genomeGFF} --cores ${cores} --path_to_bam ${bam_file} --sra_id ${sra_accession} --out $fileNamePrefix   
     """
 }
 
@@ -204,13 +203,17 @@ process MAJIQ{
         path ("psi/${species}/${species}_${sra_accession}/${sra_accession}.psi.tsv")
         path ("psi/${species}/${species}_${sra_accession}/${sra_accession}.psi.voila")
         path ("psi/${species}/${species}_${sra_accession}/psi_majiq.log")
+        path ("build/${species}/${species}_${sra_accession}/splicegraph.sql")
+        path ("voila/${species}/${species}_${sra_accession}/${sra_accession}.voila.tsv")
 
     script: 
-    def build_output_directory = "build_output/${species}/${species}_${sra_accession}"
+    def output_directory = "build/${species}/${species}_${sra_accession}"
     def psi_output_directory = "psi/${species}/${species}_${sra_accession}"
+    def voila_output_directory = "voila/${species}/${species}_${sra_accession}"
     """
     ${majiq_path}/majiq build ${genomeGFF} --conf ${settings_file} --output $build_output_directory
     ${majiq_path}/majiq psi $build_output_directory/*.majiq --name $sra_accession --output $psi_output_directory
+    ${majiq_path}/voila tsv $build_output_directory/splicegraph.sql $psi_output_directory/*.psi.voila -f ${sra_accession}.voila.tsv
     """
 }
 
@@ -229,6 +232,7 @@ workflow {
     majiq_path = params.majiq_path
     genome = params.genome
     genome_path = params.genome_path
+    cores = params.sgseq_cores
 
     genome_gen = genomeGenerateSTAR(genomeFASTA, genomeGFF, threads, species)
 
@@ -241,5 +245,8 @@ workflow {
 
     majiq_setting = majiq_setting(mapping,species, genome_path)
     majiq = MAJIQ(species, majiq_path, genomeGFF, majiq_setting)
+
+    sgseq_run = sgseq(mapping, genomeGFF, cores) 
     
     }
+    
