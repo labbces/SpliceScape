@@ -9,6 +9,8 @@ parser.add_argument('-p', '--psi_file', type=str,
                     help='.psi.tsv output from MAJIQ PSI', required=True)
 parser.add_argument('-v', '--voila_file', type=str,
                     help='.voila.tsv output from MAJIQ VOILA', required=True)
+parser.add_argument('-s', '--SRR', type=str,
+                    help='sample SRR', required=True)
 parser.add_argument('-d', '--output_dir', type=str,
                     help='path to output directory', required=True)
 parser.add_argument('-f', '--output_prefix', type=str,
@@ -20,13 +22,14 @@ args = parser.parse_args()
 psi_file = args.psi_file
 voila_file = args.voila_file
 output_prefix = f"{args.output_dir}/{args.output_prefix}"
+srr = args.SRR
 
 # init
 
 # functions
 
 
-def get_splicing_type(junctions_coords, strand, exons_coords, seqid, gene_name):
+def get_splicing_type(junctions_coords, strand, exons_coords, seqid, gene_name, de_novo_junctions, srr, mean_psi_per_lsv_junction):
     exons_starts = []
     exons_ends = []
     exons_coords = exons_coords.split(';')
@@ -159,17 +162,32 @@ def get_splicing_type(junctions_coords, strand, exons_coords, seqid, gene_name):
                 splice_types[c] = "ALTA"
             else:
                 splice_types[c] = "ALTD"
-    output = {}
+        elif set(splice_types) == {"EP", "ALTX"}:
+            splice_types[c] = "ALTX"
+
+    event_table = {}
+    psi_table = {}
     k = 0
+    de_novo = de_novo_junctions.split(";")
+    mean_psi_per_lsv_junction = mean_psi_per_lsv_junction.split(";")
     for event in splice_types:
         id_event = f"{gene_name}_{seqid}:{coords[k]}_{strand}_{event}"
         # print(id_event)
-        if id_event in output:
+        # de novo junction?
+
+        if id_event in event_table:
             print("major error")
-        output[id_event] = [gene_name, seqid, strand,
-                            coords[k].split("-")[0], coords[k].split("-")[1], event]
+        # id, gene, chr, strand, start, end, UCSC coord, event type, MAJIQ, SGSeq
+        if len(de_novo) < len(splice_types):
+            de_novo = de_novo
+        else:
+            de_novo = de_novo[k]
+        event_table[id_event] = [gene_name, seqid, strand,
+                                 coords[k].split("-")[0], coords[k].split("-")[1], f"{seqid}:{coords[k]}", event, 1, 0]
+        psi_table[f"{srr}_{id_event}"] = [de_novo,
+                                          mean_psi_per_lsv_junction[k], srr, id_event]
         k += 1
-    return(output)
+    return event_table, psi_table
 
 
 # script
@@ -188,6 +206,7 @@ with open(voila_file, "r") as v:
         line = line.strip().split("\t")
         gene_name = line[0]
         majiq_idx = line[2]
+        mean_psi_per_lsv_junction = line[3]
         gene_id = line[1]
         lsv_type = line[5]
         num_junctions = line[6]
@@ -198,11 +217,13 @@ with open(voila_file, "r") as v:
         junctions_coords = line[11]
         exons_coords = line[12]
         ir_coords = line[13]
+        srr = "srrTESTE123456"
 
         # define splice type
         splicing_gereral_class = lsv_type.split('|')[0]
 
-        j = get_splicing_type(junctions_coords, strand,
-                              exons_coords, seqid, gene_name)
+        j, l = get_splicing_type(junctions_coords, strand,
+                                 exons_coords, seqid, gene_name, de_novo_junctions, srr, mean_psi_per_lsv_junction)
         # print(j, junctions_coords, strand, exons_coords, sep="\t")
-        print(j)
+        print(j, l, sep="\n")
+        print("")
