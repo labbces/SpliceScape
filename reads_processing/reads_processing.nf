@@ -1,6 +1,6 @@
 // params.reads = "SRR28642269"
 // make sure species name is as it is on Phytozome - at least starts equal
-params.reads_file = "TEST_srr_list.txt"     
+params.reads_file = "/home/bia.estevam/landscapeSplicingGrasses/nextflow_testing_zone/TEST_5SRR_list.txt"     
 params.bbduk = "/Storage/progs/bbmap_35.85/bbduk2.sh" // no cluster no CENA
 // params.bbduk = "/home/beatrizestevam/progs/BBMap_35.85/bbmap/bbduk2.sh" // no computador do CENA
 params.rref = "/Storage/progs/BBMap/resources/adapters.fa"
@@ -249,4 +249,3 @@ workflow {
     sgseq_run = sgseq(mapping, genomeGFF, cores) 
     
     }
-    
