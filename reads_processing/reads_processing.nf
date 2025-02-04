@@ -153,6 +153,7 @@ process sgseq{
         tuple path(bam_dir), path(bam_index), path(bam_file), val(sra_accession)
         path genomeGFF
         val cores
+        val species
 
 
     output:
@@ -246,6 +247,6 @@ workflow {
     majiq_setting = majiq_setting(mapping,species, genome_path)
     majiq = MAJIQ(species, majiq_path, genomeGFF, majiq_setting)
 
-    sgseq_run = sgseq(mapping, genomeGFF, cores) 
+    sgseq_run = sgseq(mapping, genomeGFF, cores, species) 
     
     }
