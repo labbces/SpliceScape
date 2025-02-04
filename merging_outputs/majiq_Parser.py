@@ -26,144 +26,149 @@ output_prefix = f"{args.output_dir}/{args.output_prefix}"
 # functions
 
 
-def alta_altd_processor(junctions_coords, strand, exons_coords, gene_name, seqid):
-    # defining requires variables and data structures
-    c = 0
-    splice_type = "t:unknown"
-    annotated_splicing_included = False
-    first_pos_dict = {}
-    second_pos_dict = {}
+def get_splicing_type(junctions_coords, strand, exons_coords, seqid, gene_name):
+    exons_starts = []
+    exons_ends = []
+    exons_coords = exons_coords.split(';')
+    junctions_coords = junctions_coords.split(';')
+    info = {"starts": {}, "ends": {}}
     splice_types = []
-    output = {}
-    ids = {}
-    coords = junctions_coords.split(';')
+    eps = []
+    coords = []
+    c = 0
+    for exon_coord in exons_coords:
+        if exon_coord == "":
+            break
+        exon_coord = exon_coord.split('-')
+        exons_starts.append(exon_coord[0])
+        exons_ends.append(exon_coord[1])
 
-    #exons_coords = exons_coords.split(';')
-    # for idx in range(len(exons_coords) - 1):
-    #    annotated_junctions = f"{exons_coords[idx].split('-')[1]}-{exons_coords[idx+1].split('-')[0]}"
+    for junction_coord in junctions_coords:
 
-    # parsing coordinates
-    for coord in coords:
-        # for 25775115-25775483;25775115-25775478;25775106-25775478
-        positions = coord.split("-")  # 25775115-25775483
-        first_pos = positions[0]  # 25775115
-        second_pos = positions[1]  # 25775483
+        splice_type = "unknown"
+        junction_coord = junction_coord.split('-')
+        start = junction_coord[0]
+        end = junction_coord[1]
+        coords.append(f"{start}-{end}")
+        expected_start = expected_end = False
+        if start in exons_ends:
+            expected_start = True
+        if end in exons_starts:
+            expected_end = True
 
-        ids[c] = [f"{seqid}_{gene_name}_{strand}", first_pos, second_pos]
-
-        # defining splice_type
-        # first event for coordinate (simple)
-        if first_pos not in first_pos_dict:
-            first_pos_dict[first_pos] = [c]
-            if first_pos in exons_coords:
-                if strand == "+":
-                    splice_type = "ALTA"
-                elif strand == "-":
-                    splice_type = "ALTD"
-                else:
-                    print("Error unknown strand")
-
-        # second or + event for coordinate
-        else:
-            # defining event type
-            if strand == "+":
-                splice_type = "ALTA"
-            elif strand == "-":
-                splice_type = "ALTD"
+        if expected_start and expected_end:
+            if (int(exons_starts.index(end)) - int(exons_ends.index(start))) > 1:
+                splice_types.append("EX")
             else:
-                print("Error unknown strand")
+                splice_types.append("EP")
+                eps.append([start, end, c])
 
-            # updating other events types with shares positions
-            shared_positions_index = first_pos_dict[first_pos]
-            for shared_pos_index in shared_positions_index:
-                other_event_type = splice_types[shared_pos_index]
-                if other_event_type == "t:unknown":
-                    splice_types[shared_pos_index] = splice_type
-                    ids[shared_pos_index][3] = splice_type
+            if start in info["starts"]:
+                info["starts"][start].append(c)
+            else:
+                info["starts"][start] = [c]
 
-                # if a previous alternative splicing event has been assigned to the coordinates
-                # both coordinates undergo alternative splicing
-                # so ALTX means both ALTD and ALTA
-                elif other_event_type != splice_type:
-                    splice_types[shared_pos_index] = "ALTX"
-                    ids[shared_pos_index][3] = "ALTX"
+            if end in info["ends"]:
+                info["ends"][end].append(c)
+            else:
+                info["ends"][end] = [c]
 
-            first_pos_dict[first_pos].append(c)
+        else:
 
-        # first event for coordinate (simple)
-        if second_pos not in second_pos_dict:
-            second_pos_dict[second_pos] = [c]
-            if second_pos in exons_coords:
+            # START ANALYSIS
+
+            if start not in exons_ends:
                 if strand == "+":
                     splice_type = "ALTD"
                 elif strand == "-":
                     splice_type = "ALTA"
                 else:
                     print("Error unknown strand")
+            else:  # if start in expected pos
+                splice_type = "PP"
 
-        # second or + event for coordinate
-        else:
-            # defining event type
-            if strand == "+":
-                splice_type = "ALTD"
-            elif strand == "-":
-                splice_type = "ALTA"
+            if start in info["starts"]:
+                shared_positions_index = info["starts"][start]
+                for shared_pos_index in shared_positions_index:
+                    other_event_type = splice_types[shared_pos_index]
+                    # if a previous alternative splicing event has been assigned to the coordinates
+                    # both coordinates undergo alternaive splicing
+                    # so ALTX means both ALTD and ALTA
+                    if other_event_type != splice_type and other_event_type != "EX" and other_event_type != "EP":
+                        splice_types[shared_pos_index] = "ALTX"
+
+                info["starts"][start].append(c)
+            else:  # if new start
+                info["starts"][start] = [c]
+
+            splice_types.append(splice_type)
+
+
+# END ANALYSIS
+
+            if end not in exons_starts:
+                if strand == "+":
+                    splice_type = "ALTA"
+                elif strand == "-":
+                    splice_type = "ALTD"
+                else:
+                    print("Error unknown strand")
+            else:  # if end in expected pos
+                splice_type = "PP"
+
+            if end in info["ends"]:
+                info["ends"][end].append(c)
             else:
-                print("Error unknown strand")
+                info["ends"][end] = [c]
 
-            # updating other events types with shared positions
-            shared_positions_index = second_pos_dict[second_pos]
+            shared_positions_index = info["ends"][end]
             for shared_pos_index in shared_positions_index:
                 other_event_type = splice_types[shared_pos_index]
-                if other_event_type == "t:unknown":
+                if other_event_type == "PP":
                     splice_types[shared_pos_index] = splice_type
-                    ids[shared_pos_index][3] = splice_type
-
+                elif splice_type == "PP":
+                    splice_types[c] = splice_types[c]
                 # if a previous alternative splicing event has been assigned to the coordinates
                 # both coordinates undergo alternaive splicing
                 # so ALTX means both ALTD and ALTA
-                elif other_event_type != splice_type:
+                elif other_event_type != splice_type and other_event_type != "EX":
                     splice_types[shared_pos_index] = "ALTX"
-                    ids[shared_pos_index][3] = "ALTX"
-
-            second_pos_dict[second_pos].append(c)
-
-        splice_types.append(splice_type)
-        ids[c].append(splice_type)
+                elif other_event_type != "EX":
+                    splice_types[c] = splice_type
         c += 1
 
-    for a in ids.values():
-        prefix = a[0]
-        start = a[1]
-        end = a[2]
-        splice_type = a[3]
-        splice_id = f"{prefix}_{start}:{end}_{splice_type}"
+    for ep in eps:
+        alta = altd = False
+        start = ep[0]
+        end = ep[1]
+        c = ep[2]
+        if len(info["starts"][start]) > 1:
+            alta = True
+        if len(info["ends"][end]) > 1:
+            altd = True
 
-        if strand == "+":
-            if splice_type == "ALTA":
-                coord = start
-            elif splice_type == "ALTD":
-                coord = end
-            elif splice_type == "ALTX":
-                coord = f"{start}:{end}"
+        if alta == altd == True:
+            splice_types[c] = "ALTX"
+        elif altd == True:
+            if strand == "+":
+                splice_types[c] = "ALTD"
             else:
-                coord = "t"
-
-        elif strand == "-":
-            if splice_type == "ALTD":
-                coord = start
-            elif splice_type == "ALTA":
-                coord = end
-            elif splice_type == "ALTX":
-                coord = f"{start}:{end}"
+                splice_types[c] = "ALTA"
+        elif alta == True:
+            if strand == "+":
+                splice_types[c] = "ALTA"
             else:
-                coord = "t"
-
-        event_id = f"{prefix}_{coord}_{splice_type}"
-
-        output[splice_id] = [
-            event_id, f"{start}-{end}", strand, gene_name, seqid]
-
+                splice_types[c] = "ALTD"
+    output = {}
+    k = 0
+    for event in splice_types:
+        id_event = f"{gene_name}_{seqid}:{coords[k]}_{strand}_{event}"
+        # print(id_event)
+        if id_event in output:
+            print("major error")
+        output[id_event] = [gene_name, seqid, strand,
+                            coords[k].split("-")[0], coords[k].split("-")[1], event]
+        k += 1
     return(output)
 
 
@@ -197,16 +202,7 @@ with open(voila_file, "r") as v:
         # define splice type
         splicing_gereral_class = lsv_type.split('|')[0]
 
-        if splicing_gereral_class == 't':
-            t += 1
-            k = alta_altd_processor(
-                junctions_coords, strand, exons_coords, gene_name, seqid)
-            # print(k)
-            for splice_id in k.keys():
-                c += 1
-                if splice_id in voila_info:
-                    print(f'ops {splice_id}')
-                else:
-                    voila_info.append(splice_id)
-
-print(c, d, t, sep="\t")
+        j = get_splicing_type(junctions_coords, strand,
+                              exons_coords, seqid, gene_name)
+        # print(j, junctions_coords, strand, exons_coords, sep="\t")
+        print(j)
