@@ -190,9 +190,33 @@ def get_splicing_type(junctions_coords, strand, exons_coords, seqid, gene_name, 
     return event_table, psi_table
 
 
+def get_ir_splicing_type(ir_coords, strand, exons_coords, seqid, gene_name, de_novo_junctions, srr, mean_psi_per_lsv_junction):
+    coords = ir_coords.split(";")
+    event_table = {}
+    psi_table = {}
+    k = 0
+    de_novo = de_novo_junctions.split(";")
+    mean_psi_per_lsv_junction = mean_psi_per_lsv_junction.split(";")
+    for coord in coords:
+        id_event = f"{gene_name}_{seqid}:{coords[k]}_{strand}_IR"
+        # print(id_event)
+        # de novo junction?
+        de_novo = "*"
+        if id_event in event_table:
+            print("major error")
+        # id, gene, chr, strand, start, end, UCSC coord, event type, MAJIQ, SGSeq
+        event_table[id_event] = [gene_name, seqid, strand,
+                                 coords[k].split("-")[0], coord.split("-")[1], f"{seqid}:{coords}", "IR", 1, 0]
+        psi_table[f"{srr}_{id_event}"] = [de_novo,
+                                          mean_psi_per_lsv_junction[k], srr, id_event]
+        k += 1
+
+    return event_table, psi_table
+
+
 # script
-voila_info = []
-c = d = t = 0
+# voila_info = []
+
 with open(voila_file, "r") as v:
     for line in v:
         if not line.startswith("#"):
@@ -202,7 +226,9 @@ with open(voila_file, "r") as v:
             # gene_name       gene_id lsv_id  mean_psi_per_lsv_junction       stdev_psi_per_lsv_junction      lsv_type        num_junctions   num_exons       de_novo_junctions       seqid   strand  junctions_coords       exons_coords    ir_coords       ucsc_lsv_link
             break
     for line in v:  # Continua lendo as próximas linhas
-        d += 1
+        output_events = {}
+        output_psi = {}
+        j = l = m = ""
         line = line.strip().split("\t")
         gene_name = line[0]
         majiq_idx = line[2]
@@ -217,13 +243,21 @@ with open(voila_file, "r") as v:
         junctions_coords = line[11]
         exons_coords = line[12]
         ir_coords = line[13]
-        srr = "srrTESTE123456"
 
-        # define splice type
-        splicing_gereral_class = lsv_type.split('|')[0]
+        if junctions_coords != "":
 
-        j, l = get_splicing_type(junctions_coords, strand,
-                                 exons_coords, seqid, gene_name, de_novo_junctions, srr, mean_psi_per_lsv_junction)
+            output_events_alt, output_psi_alt = get_splicing_type(junctions_coords, strand,
+                                                                  exons_coords, seqid, gene_name, de_novo_junctions, srr, mean_psi_per_lsv_junction)
+            output_events.update(output_events_alt)
+            output_psi.update(output_psi_alt)
         # print(j, junctions_coords, strand, exons_coords, sep="\t")
-        print(j, l, sep="\n")
-        print("")
+        # print(j, l, sep="\n")
+        # print("")
+        if ir_coords != "":
+            output_events_ir, output_psi_ir = get_ir_splicing_type(ir_coords, strand, exons_coords, seqid,
+                                                                   gene_name, de_novo_junctions, srr, mean_psi_per_lsv_junction)
+
+            output_events.update(output_events_ir)
+            output_psi.update(output_psi_ir)
+
+        #print(output_events, output_psi, sep="\n")
