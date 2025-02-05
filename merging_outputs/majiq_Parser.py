@@ -29,9 +29,37 @@ srr = args.SRR
 # functions
 
 
+def full_coord(exons_starts, exons_ends, junction_start, junction_end, seqid):
+    i = 0
+    coord_first_exon_start = 0
+    coord_first_exon_end = 0
+
+    coord_second_exon_start = 0
+    coord_second_exon_end = 0
+
+    for exon_start in exons_starts:
+        if exon_start <= junction_start < exon_start[i+1]:
+            # junction start in exon i exon region
+            coord_first_exon_start = exon_start
+            coord_first_exon_end = junction_start
+
+        if exon_start <= junction_end < exon_start[i+1]:
+            coord_second_exon_start = junction_end
+            if junction_end <= exons_ends[i]:  # in exon
+                coord_second_exon_end = exons_ends[i]
+            else:  # in intron
+                coord_second_exon_end = exons_ends[i+1]
+        i += 1
+
+    full_coordinate = f"{seqid}:{coord_first_exon_start},{coord_first_exon_end}-{coord_second_exon_start},{coord_second_exon_end}"
+
+    return full_coordinate
+
+
 def get_splicing_type(junctions_coords, strand, exons_coords, seqid, gene_name, de_novo_junctions, srr, mean_psi_per_lsv_junction):
     exons_starts = []
     exons_ends = []
+    full_coords = []
     exons_coords = exons_coords.split(';')
     junctions_coords = junctions_coords.split(';')
     info = {"starts": {}, "ends": {}}
@@ -52,6 +80,8 @@ def get_splicing_type(junctions_coords, strand, exons_coords, seqid, gene_name, 
         junction_coord = junction_coord.split('-')
         start = junction_coord[0]
         end = junction_coord[1]
+        coord_full = full_coord(exons_starts, exons_ends, start, end, seqid)
+        full_coords.append(coord_full)
         coords.append(f"{start}-{end}")
         expected_start = expected_end = False
         if start in exons_ends:
@@ -177,13 +207,13 @@ def get_splicing_type(junctions_coords, strand, exons_coords, seqid, gene_name, 
 
         if id_event in event_table:
             print("major error")
-        # id, gene, chr, strand, start, end, UCSC coord, event type, MAJIQ, SGSeq
+        # id, gene, chr, strand, start, end, UCSC coord, event type, MAJIQ, SGSeq, full_co
         if len(de_novo) < len(splice_types):
             de_novo = de_novo
         else:
             de_novo = de_novo[k]
         event_table[id_event] = [gene_name, seqid, strand,
-                                 coords[k].split("-")[0], coords[k].split("-")[1], f"{seqid}:{coords[k]}", event, 1, 0]
+                                 coords[k].split("-")[0], coords[k].split("-")[1], f"{seqid}:{coords[k]}", event, 1, 0, full_coords[k]]
         psi_table[f"{srr}_{id_event}"] = [de_novo,
                                           mean_psi_per_lsv_junction[k], srr, id_event]
         k += 1
@@ -194,19 +224,33 @@ def get_ir_splicing_type(ir_coords, strand, exons_coords, seqid, gene_name, de_n
     coords = ir_coords.split(";")
     event_table = {}
     psi_table = {}
+    exons_starts = exons_ends = []
     k = 0
     de_novo = de_novo_junctions.split(";")
     mean_psi_per_lsv_junction = mean_psi_per_lsv_junction.split(";")
+
+    exons_coords = exons_coords.split(";")
+    for exon_coord in exons_coords:
+        if exon_coord == "":
+            break
+        exon_coord = exon_coord.split('-')
+        exons_starts.append(exon_coord[0])
+        exons_ends.append(exon_coord[1])
+
     for coord in coords:
         id_event = f"{gene_name}_{seqid}:{coords[k]}_{strand}_IR"
         # print(id_event)
         # de novo junction?
         de_novo = "*"
+
+        coord_full = full_coord(exons_starts, exons_ends,
+                                coord.split("-")[0], coord.split("-")[1], seqid)
+
         if id_event in event_table:
             print("major error")
-        # id, gene, chr, strand, start, end, UCSC coord, event type, MAJIQ, SGSeq
+        # id, gene, chr, strand, start, end, UCSC coord, event type, MAJIQ, SGSeq, full co
         event_table[id_event] = [gene_name, seqid, strand,
-                                 coords[k].split("-")[0], coord.split("-")[1], f"{seqid}:{coords}", "IR", 1, 0]
+                                 coords[k].split("-")[0], coord.split("-")[1], f"{seqid}:{coords}", "IR", 1, 0, coord_full]
         psi_table[f"{srr}_{id_event}"] = [de_novo,
                                           mean_psi_per_lsv_junction[k], srr, id_event]
         k += 1
@@ -250,9 +294,7 @@ with open(voila_file, "r") as v:
                                                                   exons_coords, seqid, gene_name, de_novo_junctions, srr, mean_psi_per_lsv_junction)
             output_events.update(output_events_alt)
             output_psi.update(output_psi_alt)
-        # print(j, junctions_coords, strand, exons_coords, sep="\t")
-        # print(j, l, sep="\n")
-        # print("")
+
         if ir_coords != "":
             output_events_ir, output_psi_ir = get_ir_splicing_type(ir_coords, strand, exons_coords, seqid,
                                                                    gene_name, de_novo_junctions, srr, mean_psi_per_lsv_junction)
@@ -260,4 +302,4 @@ with open(voila_file, "r") as v:
             output_events.update(output_events_ir)
             output_psi.update(output_psi_ir)
 
-        #print(output_events, output_psi, sep="\n")
+        print(output_events, output_psi, sep="\n")  # final outputs
