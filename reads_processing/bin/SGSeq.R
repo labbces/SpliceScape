@@ -1,5 +1,17 @@
 #!/usr/bin/env Rscript
 # Loading packages 
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager", repos="https://cloud.r-project.org")
+
+BiocManager::install(c("GenomicFeatures", "SGSeq", "rtracklayer"))
+
+# Install CRAN packages (e.g., optparse)
+install.packages("optparse", repos="https://cloud.r-project.org")
+
+# Verify installation
+library("GenomicFeatures")
+library("optparse")
+
 suppressMessages(library(optparse))
 suppressMessages(library("GenomicFeatures"))
 suppressMessages(library("SGSeq"))
