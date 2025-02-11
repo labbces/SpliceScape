@@ -162,7 +162,7 @@ process sgseq{
     script: 
     def fileNamePrefix = "${species}"
     """
-    Rscript SGSeq.R --gff ${genomeGFF} --cores ${cores} --path_to_bam ${bam_file} --sra_id ${sra_accession} --out $fileNamePrefix   
+    SGSeq.R --gff ${genomeGFF} --cores ${cores} --path_to_bam ${bam_file} --sra_id ${sra_accession} --out $fileNamePrefix   
     """
 }
 
