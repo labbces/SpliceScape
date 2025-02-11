@@ -208,7 +208,7 @@ process MAJIQ{
         path ("voila/${species}/${species}_${sra_accession}/${sra_accession}.voila.tsv")
 
     script: 
-    def output_directory = "build/${species}/${species}_${sra_accession}"
+    def build_output_directory = "build/${species}/${species}_${sra_accession}"
     def psi_output_directory = "psi/${species}/${species}_${sra_accession}"
     def voila_output_directory = "voila/${species}/${species}_${sra_accession}"
     """
