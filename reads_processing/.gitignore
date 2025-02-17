@@ -4,4 +4,4 @@ reads/
 bbduk/
 .nextflow.log*
 SRR*
-
+*.json

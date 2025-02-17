@@ -15,7 +15,7 @@ data <- data.frame(
 data <- data.frame(
   Species = c("Z. mays", "S. bicolor", "H. vulgare", "A. thaliana", "T. aestivum", "S. italica", "O. sativa"),
   Especies = c("Z. mays", "S. bicolor", "H. vulgare", "A. thaliana", "T. aestivum", "S. italica", "O. sativa"),
-  Values = c(26591, 8006,23034, )
+  Values = c(26948, 7115, 8006, 26591, 16053, 1577, 22880)
 )
 
 # Definir as cores em formato hex
@@ -49,3 +49,4 @@ ggplot(data, aes(x = Species, y = Values, fill = Species)) +
     plot.title = element_text(hjust = 0.5),  
     axis.text.x = element_text(face = "italic") 
   )
+

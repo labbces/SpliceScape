@@ -162,7 +162,7 @@ process sgseq{
     script: 
     def fileNamePrefix = "${species}"
     """
-    SGSeq.R --gff ${genomeGFF} --cores ${cores} --path_to_bam STAR/${species}/${sra_accession}/${bam_file} --sra_id ${sra_accession} --out $fileNamePrefix   
+    SGSeq.R --gff ${genomeGFF} --cores ${cores} --path_to_bam ${bam_file} --sra_id ${sra_accession} --out $fileNamePrefix   
     """
 }
 
@@ -201,23 +201,22 @@ process MAJIQ{
         tuple path(settings_file), val(sra_accession)
 
     output:
-        path ("psi/${species}/${species}_${sra_accession}/${sra_accession}.psi.tsv")
-        path ("psi/${species}/${species}_${sra_accession}/${sra_accession}.psi.voila")
-        path ("psi/${species}/${species}_${sra_accession}/psi_majiq.log")
-        path ("build/${species}/${species}_${sra_accession}/splicegraph.sql")
-        path ("voila/${species}/${species}_${sra_accession}/${sra_accession}.voila.tsv")
+        path ("psi/${species}/${sra_accession}/${sra_accession}.psi.tsv")
+        path ("psi/${species}/${sra_accession}/${sra_accession}.psi.voila")
+        path ("psi/${species}/${sra_accession}/psi_majiq.log")
+        path ("build/${species}/${sra_accession}/splicegraph.sql")
+        path ("voila/${species}/${sra_accession}/alternative_intron.tsv")
 
     script: 
-    def build_output_directory = "build/${species}/${species}_${sra_accession}"
-    def psi_output_directory = "psi/${species}/${species}_${sra_accession}"
-    def voila_output_directory = "voila/${species}/${species}_${sra_accession}"
+    def build_output_directory = "build/${species}/${sra_accession}"
+    def psi_output_directory = "psi/${species}/${sra_accession}"
+    def voila_output_directory = "voila/${species}/${sra_accession}"
     """
     ${majiq_path}/majiq build ${genomeGFF} --conf ${settings_file} --output $build_output_directory
     ${majiq_path}/majiq psi $build_output_directory/*.majiq --name $sra_accession --output $psi_output_directory
-    ${majiq_path}/voila tsv $build_output_directory/splicegraph.sql $psi_output_directory/*.psi.voila -f ${sra_accession}.voila.tsv
+    ${majiq_path}/voila modulize $build_output_directory/splicegraph.sql $psi_output_directory/*.psi.voila -f $voila_output_directory
     """
 }
-
 
 
 workflow {
