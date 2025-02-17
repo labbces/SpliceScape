@@ -5,4 +5,8 @@ bbduk/
 .nextflow.log*
 SRR*
 STAR/
+*.json
+MAJIQ/
+SGSeq/
+STAR_mapping/
 

@@ -1,0 +1,6 @@
+r-genomicfeatures
+r-sgseq
+r-txdbmaker
+r-dbi
+r-rsqlite
+bioconductor-biocmanager
