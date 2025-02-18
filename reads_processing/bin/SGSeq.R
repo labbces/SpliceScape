@@ -1,14 +1,14 @@
 #!/usr/bin/env Rscript
 # Loading packages 
+# Install BiocManager if not already installed
 if (!require("BiocManager", quietly = TRUE))
-    install.packages("BiocManager", repos="https://cloud.r-project.org")
-    
-BiocManager::install(version = "3.16")
-BiocManager::install(c("GenomicFeatures", "SGSeq", "rtracklayer"))
+    install.packages("BiocManager", repos = "https://cloud.r-project.org")
+
+BiocManager::install(version = "3.16", ask = FALSE)
+BiocManager::install(c("GenomicFeatures", "SGSeq", "rtracklayer"), ask = FALSE)
 
 # Install CRAN packages (e.g., optparse)
-install.packages("optparse", repos="https://cloud.r-project.org")
-
+install.packages("optparse", repos = "https://cloud.r-project.org")
 # Verify installation
 library("GenomicFeatures")
 library("optparse")
