@@ -2,7 +2,8 @@
 # Loading packages 
 if (!require("BiocManager", quietly = TRUE))
     install.packages("BiocManager", repos="https://cloud.r-project.org")
-
+    
+BiocManager::install(version = "3.16")
 BiocManager::install(c("GenomicFeatures", "SGSeq", "rtracklayer"))
 
 # Install CRAN packages (e.g., optparse)
