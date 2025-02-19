@@ -214,7 +214,7 @@ process MAJIQ{
     """
     ${majiq_path}/majiq build ${genomeGFF} --conf ${settings_file} --output $build_output_directory
     ${majiq_path}/majiq psi $build_output_directory/*.majiq --name $sra_accession --output $psi_output_directory
-    ${majiq_path}/voila modulize $build_output_directory/splicegraph.sql $psi_output_directory/*.psi.voila -f $voila_output_directory
+    ${majiq_path}/voila modulize $build_output_directory/splicegraph.sql $psi_output_directory/*.psi.voila -d $voila_output_directory
     """
 }
 
