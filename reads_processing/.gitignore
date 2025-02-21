@@ -5,3 +5,6 @@ bbduk/
 .nextflow.log*
 SRR*
 *.json
+*.txt
+*TEST*
+*test*
