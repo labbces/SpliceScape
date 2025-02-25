@@ -137,15 +137,17 @@ if args.mode == 'srr':
             srr_id = srr_id.strip()
             query = srr_id
 
+            if query_counter == 8:
+                time.sleep(1)
+                query_counter = 0
+
             handle = Entrez.esearch(db="sra", term=query,
                                     retmode="xml", retmax=retmax_user)
             query_counter += 1
             record_recovered_expids = Entrez.read(handle)
             handle.close()
 
-            if query_counter == 8:
-                time.sleep(1)
-                query_counter = 0
+            
             
 
             copy_record_idlist.append(record_recovered_expids['IdList'][0])
