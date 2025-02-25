@@ -14,35 +14,84 @@ import os
 version = 0.01
 parser = argparse.ArgumentParser(description='Searches SRA Database for ID, \
     BIOPROJECT,BIOSAMPLE with specific requirements.', add_help=True)
-parser.add_argument('-v', '--version', action='version', version=version)
-parser.add_argument('--verbose', dest='verbose', action='store_true')
-parser.add_argument('--summary', dest='summary_stats', action='store_true')
-parser.add_argument('-e', '--email', dest='e_mail',
+
+# required arguments
+required_args = parser.add_argument_group('Required Arguments')
+required_args.add_argument('--mode', dest='mode', help='"all" mode retrieve metadata  \
+                    for all SRR entries related to a specified species (-sp). "srr" mode \
+                    Retrieves metadata for specific SRR IDs provided by the user (-see_file).', default='all', 
+                    choices=['all', 'srr'], required=True)
+required_args.add_argument('-e', '--email', dest='e_mail',
                     metavar='A.N.Other@example.com', type=str,
                     help='User e-mail', required=True)
-parser.add_argument('-sp', dest='species', metavar='Setaria viridis',
-                    type=str, help='Species name', required=True)
-parser.add_argument('-ll', dest='lib_layout', metavar='PAIRED|SINGLE',
-                    type=str, help='Library layout (SINGLE or PAIRED)',
-                    required=True)
-parser.add_argument('--database', dest='db', metavar='database.db',
+required_args.add_argument('-a', '--api_key', dest='api_key', type=str,
+                    help='NCBI API Key for increased request limits', required=True)
+required_args.add_argument('--database', dest='db', metavar='database.db',
                     type=str, help='SQLite3 database file.', required=True)
-parser.add_argument('--max_n_ids', dest='user_maxnids', metavar='1000',
+
+# required arguments if mode is 'all'
+required_args_all_mode = parser.add_argument_group('Required Arguments if mode is "all"')
+required_args_all_mode.add_argument('-sp', dest='species', metavar='Setaria viridis',
+                    type=str, help='Species name - Required if mode is "all"')
+required_args_all_mode.add_argument('-ll', dest='lib_layout', metavar='PAIRED|SINGLE',
+                    type=str, help='Library layout (SINGLE or PAIRED) - Required if mode is "all"')
+
+# required arguments if mode is 'srr'
+required_args_srr_mode = parser.add_argument_group('Required Arguments if mode is "srr"')
+required_args_srr_mode.add_argument('-srr_file', dest='srr_file',
+                    type=str, help='Path to a file containing the desired SRR IDs, with one SRR per line')
+
+# optional arguments
+optional_args = parser.add_argument_group('Optional Arguments')
+optional_args.add_argument('-v', '--version', action='version', version=version)
+optional_args.add_argument('--verbose', dest='verbose', action='store_true')
+optional_args.add_argument('--summary', dest='summary_stats', action='store_true')
+optional_args.add_argument('--max_n_ids', dest='user_maxnids', metavar='1000',
                     type=int, help='Max number of identifiers to return', required=False)
-parser.add_argument('--srr_list_out', dest='srr_list_file', metavar='sra_accessions.txt',
+optional_args.add_argument('--srr_list_out', dest='srr_list_file', metavar='sra_accessions.txt',
                     type=str,
                     help='File with the list of SRA ACCESIONS filtered by -sp and -ll options',
                     required=False)
-parser.add_argument('--srr_list_out_with_pmid', dest='srr_list_file_wpmid', metavar='sra_accessions_with_pmid.txt',
+optional_args.add_argument('--srr_list_out_with_pmid', dest='srr_list_file_wpmid', metavar='sra_accessions_with_pmid.txt',
                     type=str,
                     help='File with the list of SRA ACCESIONS filtered by -sp and -ll options (with associated pmid)',
                     required=False)
 
 args = parser.parse_args()
-input_species = args.species
-input_lib_layout = args.lib_layout
+
+# Validate conditional requirements
+if args.mode == 'all' and not (args.species and args.lib_layout):
+    print('--mode "all" requires -sp (species) and -ll (library layout).')
+    parser.print_help()
+    exit(1)
+else:
+    input_species = args.species
+    input_lib_layout = args.lib_layout
+
+if args.mode == 'srr' and not args.srr_file:
+    parser.error('--mode "srr" requires -srr_file.')
+    parser.print_help()
+    exit(1)
+else:
+    srr_file = args.srr_file
+
 email_address = args.e_mail
 database_name = args.db
+
+Entrez.email = email_address
+Entrez.api_key = args.api_key
+
+headers = {}
+headers['User-Agent'] = 'Mozilla/5.0 (X11; Linux x86_64; rv:10.0) Gecko/20100101 Firefox/10.0'
+# TODO: Use retstart and retmax https://dataguide.nlm.nih.gov/eutilities/utilities.html
+retmax_user = 10000
+if args.user_maxnids:
+    retmax_user = args.user_maxnids
+
+public_datasets_not_available = 0
+public_datasets_added_to_sqlite = 0
+skipped_datasets_in_sqlite = 0
+no_biosample_found_current_run = 0
 
 if args.srr_list_file_wpmid:
     if os.path.exists(args.srr_list_file_wpmid):
@@ -54,25 +103,61 @@ if args.srr_list_file:
         raise Exception(
             f'Could not create file \"{args.srr_list_file}\" (passed with --srr_list_out option).\nPlease use a different file name')
 
-# TODO: Use retstart and retmax https://dataguide.nlm.nih.gov/eutilities/utilities.html
-retmax_user = 10000
-if args.user_maxnids:
-    retmax_user = args.user_maxnids
 
-public_datasets_not_available = 0
-public_datasets_added_to_sqlite = 0
-skipped_datasets_in_sqlite = 0
-no_biosample_found_current_run = 0
+if args.mode == 'all':
+    if input_lib_layout == "PAIRED":
+        lib_layout = "\"library layout paired\"[Properties]"
+    elif input_lib_layout == "SINGLE":
+        lib_layout = "\"library layout single\"[Properties]"
+    else:
+        print("Something went wrong.")
+    
+    query = input_species+"[ORGN] "+"biomol rna[Properties]"+" "+lib_layout
+    print(query)
+
+    handle = Entrez.esearch(db="sra", term=query,
+                            retmode="xml", retmax=retmax_user)
+    record_recovered_expids = Entrez.read(handle)
+    handle.close()
+
+    copy_record_idlist = record_recovered_expids['IdList']
+
+    if args.verbose:
+        print(
+            f"Total of {len(record_recovered_expids['IdList'])} datasets (SRA/NCBI) available")
+        if len(record_recovered_expids['IdList']) == 10000:
+            print(
+                f'There is probably more than 10,000 datasets available for {input_species}.')
+
+if args.mode == 'srr':
+    query_counter = 0
+    copy_record_idlist = []
+    with open(srr_file, 'r') as srrs:
+        for srr_id in srrs:
+            srr_id = srr_id.strip()
+            query = srr_id
+
+            handle = Entrez.esearch(db="sra", term=query,
+                                    retmode="xml", retmax=retmax_user)
+            query_counter += 1
+            record_recovered_expids = Entrez.read(handle)
+            handle.close()
+
+            if query_counter == 10:
+                time.sleep(1)
+                query_counter = 0
+            
+
+            copy_record_idlist.append(record_recovered_expids['IdList'][0])
 
 # Connet to sqlite3 database
 conn2sra_metadata_db = sqlite3.connect(database_name)
 
 c = conn2sra_metadata_db.cursor()
 
-'''# CREATE TABLE sra_metadata (if necessary)
+# CREATE TABLE sra_metadata (if necessary)
 c.execute("""CREATE TABLE IF NOT EXISTS sra_metadata (
         sra_id TEXT UNIQUE,
-        strand_info TEXT,
         ncbi_expid INTEGER,
         ncbi_biosample_id TEXT,
         ncbi_biosample_name TEXT,
@@ -90,41 +175,11 @@ c.execute("""CREATE TABLE IF NOT EXISTS sra_metadata (
         source_name TEXT,
         pmid INTEGER,
         layout TEXT
-        )""")'''
+        )""")
 
 conn2sra_metadata_db.commit()
 
-if input_lib_layout == "PAIRED":
-    lib_layout = "\"library layout paired\"[Properties]"
-elif input_lib_layout == "SINGLE":
-    lib_layout = "\"library layout single\"[Properties]"
-else:
-    print("Something went wrong.")
-
-Entrez.email = email_address
-
-headers = {}
-headers['User-Agent'] = 'Mozilla/5.0 (X11; Linux x86_64; rv:10.0) Gecko/20100101 Firefox/10.0'
-
-query = input_species+"[ORGN] "+"biomol rna[Properties]"+" "+lib_layout
-print(query)
-
-handle = Entrez.esearch(db="sra", term=query,
-                        retmode="xml", retmax=retmax_user)
-record_recovered_expids = Entrez.read(handle)
-handle.close()
-
-copy_record_idlist = record_recovered_expids['IdList']
-
-if args.verbose:
-    print(
-        f"Total of {len(record_recovered_expids['IdList'])} datasets (SRA/NCBI) available")
-    if len(record_recovered_expids['IdList']) == 10000:
-        print(
-            f'There is probably more than 10,000 datasets available for {input_species}.')
-
 time.sleep(1)
-'''
 query_counter = 0
 for exp_id in copy_record_idlist:
     if args.verbose:
@@ -133,7 +188,7 @@ for exp_id in copy_record_idlist:
     c.execute("SELECT ncbi_expid FROM sra_metadata WHERE ncbi_expid = ?", (exp_id,))
     data = c.fetchall()
     if len(data) == 0:
-        if query_counter == 3:
+        if query_counter == 10:
             time.sleep(1)
             query_counter = 0
         query_counter += 1
@@ -169,8 +224,6 @@ for exp_id in copy_record_idlist:
                     'total_spots', 'default_value')
                 srr_total_bases = run.attrib.get(
                     'total_bases', 'default_value')
-                # srr_total_spots = run.attrib['total_spots']
-                # srr_total_bases = run.attrib['total_bases']
                 expxml_str = "<ExpXml>" + sra_record[0]['ExpXml'] + "</ExpXml>"
                 root_expxml = ET.fromstring(expxml_str)
                 platform = root_expxml.find(
@@ -190,7 +243,7 @@ for exp_id in copy_record_idlist:
                         continue
 
             handle.close()
-            if query_counter == 3:
+            if query_counter == 10:
                 time.sleep(1)
                 query_counter = 0
             query_counter += 1
@@ -202,7 +255,7 @@ for exp_id in copy_record_idlist:
                 no_biosample_found_current_run += 1
                 continue
             id = str(record_samn[0]['LinkSetDb'][0]['Link'][0]['Id'])
-            if query_counter == 3:
+            if query_counter == 10:
                 time.sleep(1)
                 query_counter = 0
             query_counter += 1
@@ -215,6 +268,10 @@ for exp_id in copy_record_idlist:
             samn_name = ''
             if record_samn['DocumentSummarySet']['DocumentSummary'][0]['Title']:
                 samn_name = record_samn['DocumentSummarySet']['DocumentSummary'][0]['Title']
+            if record_samn['DocumentSummarySet']['DocumentSummary'][0]['Organism']:
+                organism = record_samn['DocumentSummarySet']['DocumentSummary'][0]['Organism']
+            else:
+                organism = ''
             root_sample_data = ET.fromstring(
                 record_samn['DocumentSummarySet']['DocumentSummary'][0]['SampleData'])
             cultivar = ''
@@ -242,13 +299,14 @@ for exp_id in copy_record_idlist:
                             treatment = biosample_attribute.text
                         if attrib_name == 'source_name':
                             source_name = biosample_attribute.text
+            
             if args.verbose:
                 print(f'cultivar: {cultivar}, age: {age}, genotype: {genotype},\
                 dev_stage: {dev_stage}, tissue: {tissue}, treatment: {treatment},\
-                source_name: {source_name}')
+                source_name: {source_name}, organism: {organism}')
 
             # Get Literature Information (PubMed)
-            if query_counter == 3:
+            if query_counter == 10:
                 time.sleep(1)
                 query_counter = 0
             query_counter += 1
@@ -258,7 +316,7 @@ for exp_id in copy_record_idlist:
             if record_pmid[0]['LinkSetDb']:
                 if 'Id' in record_pmid[0]['LinkSetDb'][0]['Link'][0].keys():
                     pmid = record_pmid[0]['LinkSetDb'][0]['Link'][0]['Id']
-            if query_counter == 3:
+            if query_counter == 10:
                 time.sleep(1)
                 query_counter = 0
             query_counter += 1
@@ -271,7 +329,7 @@ for exp_id in copy_record_idlist:
             prj_id = ''
             if record_prj[0]['LinkSetDb']:
                 idprj = str(record_prj[0]['LinkSetDb'][0]['Link'][0]['Id'])
-                if query_counter == 3:
+                if query_counter == 10:
                     time.sleep(1)
                     query_counter = 0
                 query_counter += 1
@@ -311,7 +369,7 @@ for exp_id in copy_record_idlist:
                         manuscript_title = manuscript_title.replace(
                             '[HTML][HTML] ', '')
                         title_sentence = manuscript_title + "[title]"
-                        if query_counter == 3:
+                        if query_counter == 10:
                             time.sleep(1)
                             query_counter = 0
                         query_counter += 1
@@ -358,7 +416,7 @@ for exp_id in copy_record_idlist:
                         )
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                           (sra_id, exp_id, samn_id, samn_name, prj_id, srr_total_spots,
-                           srr_total_bases, platform, input_species, cultivar, genotype,
+                           srr_total_bases, platform, organism, cultivar, genotype,
                            treatment, dev_stage, tissue, age, source_name, pmid,
                            input_lib_layout))
         else:
@@ -423,4 +481,3 @@ if args.summary_stats:
 c.close()
 
 conn2sra_metadata_db.close()
-'''

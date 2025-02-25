@@ -9,4 +9,6 @@ STAR/
 MAJIQ/
 SGSeq/
 STAR_mapping/
-
+*.txt
+*TEST*
+*test*
