@@ -1,25 +1,10 @@
 #!/usr/bin/env Rscript
 # Loading packages 
-# Install BiocManager if not already installed
-if (!require("BiocManager", quietly = TRUE))
-    install.packages("BiocManager", repos = "https://cloud.r-project.org")
-
-BiocManager::install(version = "3.16", ask = FALSE)
-BiocManager::install(c("GenomicFeatures", "SGSeq", "rtracklayer"), ask = FALSE)
-
-# Install CRAN packages (e.g., optparse)
-install.packages("optparse", repos = "https://cloud.r-project.org")
-# Verify installation
-library("GenomicFeatures")
-library("optparse")
-
-suppressMessages(library(optparse))
+suppressMessages(library("optparse"))
 suppressMessages(library("GenomicFeatures"))
 suppressMessages(library("SGSeq"))
-# library(txdbmaker)
-# library(DBI)
-# library(RSQLite)
-# Load required libraries
+suppressMessages(library("txdbmaker"))
+
 
 # Getting arguments from terminal
 option_list = list(
@@ -81,11 +66,6 @@ result <- cbind(flat_mcols, flat_fpkm)
 # Write to CSV
 output <- paste0(opt$out, "/SGSeq_", opt$sra_id, ".csv")
 write.csv(result, file.path(output), row.names = FALSE)
-
-# result <- cbind(data.frame(mcols(analysis_variants)), data.frame(sgvc_fpkm))
-
-#output <- paste0(opt$out, "/SGSeq_", opt$sra_id, "_anno.csv")
-#write.csv(result, file.path(output))
 
 # Running example
 # Rscript SGSeq.R --gff /home/bia/LandscapeSplicingGrasses/data/Phytozome/PhytozomeV12/early_release/Athaliana_447_Araport11/annotation/Athaliana_447_Araport11.gene_exons.gff3 --cores 1 --path_to_bam /home/bia/LandscapeSplicingGrasses/Results/star/Athaliana_447Aligned.sortedByCoord.out.bam --sra_id SRR25663954 --out teste
