@@ -143,7 +143,7 @@ if args.mode == 'srr':
             record_recovered_expids = Entrez.read(handle)
             handle.close()
 
-            if query_counter == 10:
+            if query_counter == 8:
                 time.sleep(1)
                 query_counter = 0
             
@@ -188,7 +188,7 @@ for exp_id in copy_record_idlist:
     c.execute("SELECT ncbi_expid FROM sra_metadata WHERE ncbi_expid = ?", (exp_id,))
     data = c.fetchall()
     if len(data) == 0:
-        if query_counter == 10:
+        if query_counter == 8:
             time.sleep(1)
             query_counter = 0
         query_counter += 1
@@ -243,7 +243,7 @@ for exp_id in copy_record_idlist:
                         continue
 
             handle.close()
-            if query_counter == 10:
+            if query_counter == 8:
                 time.sleep(1)
                 query_counter = 0
             query_counter += 1
@@ -255,7 +255,7 @@ for exp_id in copy_record_idlist:
                 no_biosample_found_current_run += 1
                 continue
             id = str(record_samn[0]['LinkSetDb'][0]['Link'][0]['Id'])
-            if query_counter == 10:
+            if query_counter == 8:
                 time.sleep(1)
                 query_counter = 0
             query_counter += 1
@@ -306,7 +306,7 @@ for exp_id in copy_record_idlist:
                 source_name: {source_name}, organism: {organism}')
 
             # Get Literature Information (PubMed)
-            if query_counter == 10:
+            if query_counter == 8:
                 time.sleep(1)
                 query_counter = 0
             query_counter += 1
@@ -316,7 +316,7 @@ for exp_id in copy_record_idlist:
             if record_pmid[0]['LinkSetDb']:
                 if 'Id' in record_pmid[0]['LinkSetDb'][0]['Link'][0].keys():
                     pmid = record_pmid[0]['LinkSetDb'][0]['Link'][0]['Id']
-            if query_counter == 10:
+            if query_counter == 8:
                 time.sleep(1)
                 query_counter = 0
             query_counter += 1
@@ -329,7 +329,7 @@ for exp_id in copy_record_idlist:
             prj_id = ''
             if record_prj[0]['LinkSetDb']:
                 idprj = str(record_prj[0]['LinkSetDb'][0]['Link'][0]['Id'])
-                if query_counter == 10:
+                if query_counter == 8:
                     time.sleep(1)
                     query_counter = 0
                 query_counter += 1
@@ -369,7 +369,7 @@ for exp_id in copy_record_idlist:
                         manuscript_title = manuscript_title.replace(
                             '[HTML][HTML] ', '')
                         title_sentence = manuscript_title + "[title]"
-                        if query_counter == 10:
+                        if query_counter == 8:
                             time.sleep(1)
                             query_counter = 0
                         query_counter += 1
