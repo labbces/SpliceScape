@@ -3,7 +3,6 @@
 suppressMessages(library("optparse"))
 suppressMessages(library("GenomicFeatures"))
 suppressMessages(library("SGSeq"))
-suppressMessages(library("txdbmaker"))
 
 
 # Getting arguments from terminal
@@ -33,9 +32,8 @@ cores = opt$cores
 dir.create(opt$out, showWarnings = FALSE, recursive = TRUE)
 
 # Load annotation file
-txdb <- txdbmaker::makeTxDbFromGFF(opt$gff, format = "gff3")
+txdb <- makeTxDbFromGFF(opt$gff, format = "gff3")
 txFeatures <- convertToTxFeatures(txdb)
-
 
 # Get information from BAM - Output from STAR
 sample_info <- data.frame(
