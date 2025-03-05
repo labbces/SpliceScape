@@ -1,4 +1,7 @@
 #!/usr/bin/env Rscript
+print(.libPaths())
+.libPaths("/home/bia.estevam/R/library")
+
 # Loading packages 
 suppressMessages(library("optparse"))
 suppressMessages(library("GenomicFeatures"))
