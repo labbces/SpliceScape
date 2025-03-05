@@ -7,6 +7,7 @@ params.rref = "/Storage/progs/BBMap/resources/adapters.fa"
 params.minlength = 60
 params.trimq = 20
 params.k = 27
+params.r_libs = "/home/bia.estevam/R/library"
 params.maxmem = 20
 params.genomeFASTA = "/home/bia.estevam/landscapeSplicingGrasses/data/Phytozome/PhytozomeV12/early_release/Athaliana_447_Araport11/assembly/Athaliana_447_TAIR10.fa"
 params.genomeGFF = "/home/bia.estevam/landscapeSplicingGrasses/data/Phytozome/PhytozomeV12/early_release/Athaliana_447_Araport11/annotation/Athaliana_447_Araport11.gene_exons.gff3"
@@ -154,6 +155,7 @@ process sgseq{
         path genomeGFF
         val cores
         val species
+        val r_libs
 
 
     output:
@@ -162,7 +164,7 @@ process sgseq{
     script: 
     def fileNamePrefix = "${species}"
     """
-    SGSeq.R --gff ${genomeGFF} --cores ${cores} --path_to_bam ${bam_file} --sra_id ${sra_accession} --out $fileNamePrefix   
+    SGSeq.R --gff ${genomeGFF} --cores ${cores} --path_to_bam ${bam_file} --sra_id ${sra_accession} --out $fileNamePrefix --libPaths ${r_libs}
     """
 }
 
@@ -205,7 +207,14 @@ process MAJIQ{
         path ("psi/${species}/${sra_accession}/${sra_accession}.psi.voila")
         path ("psi/${species}/${sra_accession}/psi_majiq.log")
         path ("build/${species}/${sra_accession}/splicegraph.sql")
-        path ("voila/${species}/${sra_accession}/alternative_intron.tsv")
+        tuple path ("voila/${species}/${sra_accession}/alt3and5prime.tsv"), 
+              path ("voila/${species}/${sra_accession}/alt3prime.tsv"), 
+              path ("voila/${species}/${sra_accession}/alt5prime.tsv"), 
+              path ("voila/${species}/${sra_accession}/alternate_first_exon.tsv"),
+              path ("voila/${species}/${sra_accession}/alternate_last_exon.tsv"),
+              path ("voila/${species}/${sra_accession}/alternative_intron.tsv"),
+              path ("voila/${species}/${sra_accession}/multi_exon_spanning.tsv"),
+              path ("voila/${species}/${sra_accession}/mutually_exclusive.tsv")
 
     script: 
     def build_output_directory = "build/${species}/${sra_accession}"
@@ -233,6 +242,7 @@ workflow {
     genome = params.genome
     genome_path = params.genome_path
     cores = params.sgseq_cores
+    r_libs = params.r_libs
 
     genome_gen = genomeGenerateSTAR(genomeFASTA, genomeGFF, threads, species)
 
@@ -246,6 +256,6 @@ workflow {
     majiq_setting = majiq_setting(mapping,species, genome_path)
     majiq = MAJIQ(species, majiq_path, genomeGFF, majiq_setting)
 
-    sgseq_run = sgseq(mapping, genomeGFF, cores, species) 
+    sgseq_run = sgseq(mapping, genomeGFF, cores, species, r_libs) 
     
     }

@@ -1,12 +1,6 @@
 #!/usr/bin/env Rscript
-print(.libPaths())
-.libPaths("/home/bia.estevam/R/library")
-
-# Loading packages 
+# Loading packages
 suppressMessages(library("optparse"))
-suppressMessages(library("GenomicFeatures"))
-suppressMessages(library("SGSeq"))
-
 
 # Getting arguments from terminal
 option_list = list(
@@ -14,10 +8,18 @@ option_list = list(
   make_option(c("--cores"), type='integer', default = 1, help="Number of cores"),
   make_option(c("--path_to_bam"), type='character', default = NULL, help="Path to BAM file(s)", metavar='character'),
   make_option(c("--sra_id"), type='character', default = NULL, help="Sample ID - as it is in database", metavar='character'),
-  make_option(c("--out"), type='character', default = "", help="Output folder", metavar='character')
+  make_option(c("--out"), type='character', default = "", help="Output folder", metavar='character'),
+  make_option(c("--libPaths"), type = 'character', default = NULL, help = "Optional library path to add", metavar = 'character')
 )
-opt_parser = OptionParser(option_list = option_list)
-opt = parse_args(opt_parser)
+opt_parser <- OptionParser(option_list = option_list)
+opt <- parse_args(opt_parser)
+
+suppressMessages(library("GenomicFeatures"))
+suppressMessages(library("SGSeq"))
+
+if (!is.null(opt$libPaths)) {
+  .libPaths(c(opt$libPaths, .libPaths()))
+}
 
 #sra_id <- "SRR25663954"             # sample ID (SRA ID)
 #bam_file_path <- "/home/bia/LandscapeSplicingGrasses/Results/star/Athaliana_447Aligned.sortedByCoord.out.bam"      # Path to BAM - Output from STAR 
