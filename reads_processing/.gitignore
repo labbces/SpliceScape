@@ -12,5 +12,4 @@ STAR_mapping/
 *.txt
 *TEST*
 *test*
-performance_analysis/*.html
-performance_analysis/*.txt
+
