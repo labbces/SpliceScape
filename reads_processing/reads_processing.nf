@@ -207,14 +207,7 @@ process MAJIQ{
         path ("psi/${species}/${sra_accession}/${sra_accession}.psi.voila")
         path ("psi/${species}/${sra_accession}/psi_majiq.log")
         path ("build/${species}/${sra_accession}/splicegraph.sql")
-        tuple path ("voila/${species}/${sra_accession}/alt3and5prime.tsv"), 
-              path ("voila/${species}/${sra_accession}/alt3prime.tsv"), 
-              path ("voila/${species}/${sra_accession}/alt5prime.tsv"), 
-              path ("voila/${species}/${sra_accession}/alternate_first_exon.tsv"),
-              path ("voila/${species}/${sra_accession}/alternate_last_exon.tsv"),
-              path ("voila/${species}/${sra_accession}/alternative_intron.tsv"),
-              path ("voila/${species}/${sra_accession}/multi_exon_spanning.tsv"),
-              path ("voila/${species}/${sra_accession}/mutually_exclusive.tsv")
+        tuple path ("voila/${species}/${sra_accession}/*")
 
     script: 
     def build_output_directory = "build/${species}/${sra_accession}"
@@ -223,7 +216,7 @@ process MAJIQ{
     """
     ${majiq_path}/majiq build ${genomeGFF} --conf ${settings_file} --output $build_output_directory
     ${majiq_path}/majiq psi $build_output_directory/*.majiq --name $sra_accession --output $psi_output_directory
-    ${majiq_path}/voila modulize $build_output_directory/splicegraph.sql $psi_output_directory/*.psi.voila -d $voila_output_directory
+    ${majiq_path}/voila modulize $build_output_directory/splicegraph.sql $psi_output_directory/*.psi.voila -d $voila_output_directory --keep-constitutive
     """
 }
 
