@@ -1,5 +1,5 @@
 import sqlite3
-from majiq_Parser import majiq_parser
+from majiq_modulizer_parser import majiq_parser
 
 
 def create_tables(db):
@@ -16,27 +16,32 @@ def create_tables(db):
             # Create splicing_events table with event_id as the primary key
             cursor.execute('''
             CREATE TABLE IF NOT EXISTS splicing_events (
-                event_id TEXT PRIMARY KEY,
-                search_id TEXT,
-                gene_name TEXT,
-                seqid TEXT,
-                strand TEXT,
-                start INTEGER,
-                end INTEGER,
-                coord TEXT,
-                event_type TEXT,
-                full_coord TEXT
-            )
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_id TEXT UNIQUE,
+            search TEXT,
+            gene_name TEXT,
+            gene_id TEXT,
+            seqid TEXT,
+            strand TEXT,
+            event_type TEXT,
+            start INTEGER,
+            end INTEGER,
+            coord TEXT,
+            full_coord TEXT,
+            upstream_exon_coord TEXT,
+            downstream_exon_coord TEXT
+        )
             ''')
 
             # Create sample_info table with event_id as a foreign key
             cursor.execute('''
             CREATE TABLE IF NOT EXISTS sample_info (
-                search_id TEXT PRIMARY KEY,
-                de_novo INT,
-                mean_psi_per_lsv_junction REAL,
-                srr TEXT,
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 event_id TEXT,
+                de_novo TEXT,
+                mean_psi_majiq REAL,
+                psi_sgseq REAL,
+                srr TEXT,
                 majiq INT,
                 sgseq INT,
                 FOREIGN KEY (event_id) REFERENCES splicing_events(event_id)
@@ -54,4 +59,4 @@ create_tables(db_path)
 
 voila_file = "/home/bia/LandscapeSplicingGrasses/SplicingLandscapeGrasses/merging_outputs/teste"
 srr = "srrTESTE123456"
-majiq_parser(voila_file, srr, db_path)
+majiq_parser("/home/bia/LandscapeSplicingGrasses/SplicingLandscapeGrasses/merging_outputs/data", db_path, "srrTESTE123456")
