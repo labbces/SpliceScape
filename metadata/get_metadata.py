@@ -38,13 +38,15 @@ required_args_all_mode.add_argument('-ll', dest='lib_layout', metavar='PAIRED|SI
 
 # required arguments if mode is 'srr'
 required_args_srr_mode = parser.add_argument_group('Required Arguments if mode is "srr"')
-required_args_srr_mode.add_argument('-srr_file', dest='srr_file',
+required_args_srr_mode.add_argument('--srr_file', dest='srr_file',
                     type=str, help='Path to a file containing the desired SRR IDs, with one SRR per line')
 
 # optional arguments
 optional_args = parser.add_argument_group('Optional Arguments')
 optional_args.add_argument('-v', '--version', action='version', version=version)
 optional_args.add_argument('--verbose', dest='verbose', action='store_true')
+optional_args.add_argument('--keep_unavailable', dest='keep', default=False, 
+                           help='Keep unavailable datasets in the database')
 optional_args.add_argument('--summary', dest='summary_stats', action='store_true')
 optional_args.add_argument('--max_n_ids', dest='user_maxnids', metavar='1000',
                     type=int, help='Max number of identifiers to return', required=False)
@@ -216,7 +218,7 @@ for exp_id in copy_record_idlist:
                             unavailable_run = 1
 
             # If SRA ACCESSION is public but unavailable, skip experiment
-            if unavailable_run:
+            if unavailable_run and (args.keep == "False"):
                 print(
                     f'Skipping {sra_ids}: looks like it is public but still not available.')
                 public_datasets_not_available += 1

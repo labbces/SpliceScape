@@ -2,4 +2,6 @@
 grasses/filtered
 *db
 merging_outputs/data
+merging_outputs/test*
+
 
