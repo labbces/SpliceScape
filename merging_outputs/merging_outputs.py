@@ -29,7 +29,9 @@ def create_tables(db):
             coord TEXT,
             full_coord TEXT,
             upstream_exon_coord TEXT,
-            downstream_exon_coord TEXT
+            downstream_exon_coord TEXT,
+            mean_psi_majiq REAL,
+            mean_psi_sgseq REAL
         )
             ''')
 

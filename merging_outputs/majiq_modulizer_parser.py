@@ -107,7 +107,7 @@ def get_info(line, event_type_general):
             - spliced_with_coord (str): Spliced with coordinates.
             - junction_name (str): Junction name.
             - junction_coord (str): Junction coordinates.
-            - median_psi (str or int): Median PSI value.
+            - mean_psi (str or int): Median PSI value.
             - event_type (str): The specific event type.
     Raises:
         ValueError: If the line does not contain the expected number of fields for the given event type.
@@ -130,26 +130,26 @@ def get_info(line, event_type_general):
     junction_name = line[12]
     junction_coord = line[13]
     if event_type_general != "constitutive":
-        median_psi = line[18]
+        mean_psi = line[18]
     else:
         try:
-            median_psi = line[19]
+            mean_psi = line[19]
         except:
-            median_psi = 0
+            mean_psi = 0
     # tandem cassette
     if event_type_general == "tandem_cassette":        
         if len(line) != 22:
             return "invalid"
         junction_name = line[14]
         junction_coord = line[15]
-        median_psi = line[20]
+        mean_psi = line[20]
         event_type = "SE"
     elif event_type_general == "cassette":
         event_type = "SE"
     else:
         event_type = event_type_general
     
-    return gene_id, gene_name, seqid, strand, denovo, reference_exon_coord, spliced_with, spliced_with_coord, junction_name, junction_coord, median_psi, event_type
+    return gene_id, gene_name, seqid, strand, denovo, reference_exon_coord, spliced_with, spliced_with_coord, junction_name, junction_coord, mean_psi, event_type
 
 def define_specific_event_type(event_type_general, junction_name, strand, upstream_end, junction_coord_start, junction_coord_end, downstream_start, downstream_end):
     """
@@ -236,7 +236,7 @@ def file_processing(file, srr, event_type_general, dictionary):
                 removed_events_counts += 1 
                 continue
             else:
-                gene_id, gene_name, seqid, strand, denovo, reference_exon_coord, spliced_with, spliced_with_coord, junction_name, junction_coord, median_psi, event_type = info
+                gene_id, gene_name, seqid, strand, denovo, reference_exon_coord, spliced_with, spliced_with_coord, junction_name, junction_coord, mean_psi, event_type = info
 
 
             # Defining new coordinates colunms: Coord, full_coord, upstream_exon_coord and downstream_exon_coord
@@ -259,11 +259,11 @@ def file_processing(file, srr, event_type_general, dictionary):
             if event_id in dictionary.keys():
                 removed_events_counts += 1
                 registered_mean_psi = dictionary[event_id][13]
-                if registered_mean_psi != median_psi:
-                    median_psi = (float(registered_mean_psi) + float(median_psi)) / 2
+                if registered_mean_psi != mean_psi:
+                    mean_psi = (float(registered_mean_psi) + float(mean_psi)) / 2
 
                     
-            dictionary[event_id] = [search, gene_name, gene_id, seqid, strand, event_type, junction_coord_start, junction_coord_end, coord, full_coord, upstream_exon_coord, downstream_exon_coord, denovo, median_psi, 1, 0, srr]
+            dictionary[event_id] = [search, gene_name, gene_id, seqid, strand, event_type, junction_coord_start, junction_coord_end, coord, full_coord, upstream_exon_coord, downstream_exon_coord, denovo, mean_psi, 1, 0, srr]
 
     return dictionary
 
@@ -277,7 +277,7 @@ def add_to_database(db, processed_data):
                            The keys are event IDs and the values are tuples containing:
                            (search, gene_name, gene_id, seqid, strand, event_type, 
                            junction_coord_start, junction_coord_end, coord, full_coord, 
-                           upstream_exon_coord, downstream_exon_coord, denovo, median_psi, 
+                           upstream_exon_coord, downstream_exon_coord, denovo, mean_psi, 
                            majiq, sgseq, srr).
 
     The function inserts data into two tables:
@@ -290,17 +290,24 @@ def add_to_database(db, processed_data):
     cursor = conn.cursor()
 
     for event_id, values in processed_data.items():
-        search, gene_name, gene_id, seqid, strand, event_type, junction_coord_start, junction_coord_end, coord, full_coord, upstream_exon_coord, downstream_exon_coord, denovo, median_psi, majiq, sgseq, srr = values
+        search, gene_name, gene_id, seqid, strand, event_type, junction_coord_start, junction_coord_end, coord, full_coord, upstream_exon_coord, downstream_exon_coord, denovo, mean_psi, majiq, sgseq, srr = values
 
         cursor.execute('''
-        INSERT OR IGNORE INTO splicing_events (event_id, search, gene_name, gene_id, seqid, strand, event_type, start, end, coord, full_coord, upstream_exon_coord, downstream_exon_coord)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (event_id, search, gene_name, gene_id, seqid, strand, event_type, junction_coord_start, junction_coord_end, coord, full_coord, upstream_exon_coord, downstream_exon_coord))
+        INSERT INTO splicing_events 
+            (event_id, search, gene_name, gene_id, seqid, strand, event_type, 
+            start, end, coord, full_coord, upstream_exon_coord, downstream_exon_coord, 
+            mean_psi_majiq, mean_psi_sgseq)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(event_id) DO UPDATE SET
+            mean_psi_majiq = (mean_psi_majiq + excluded.mean_psi_majiq) / 2
+        ''', (event_id, search, gene_name, gene_id, seqid, strand, event_type,
+              junction_coord_start, junction_coord_end, coord, full_coord,
+              upstream_exon_coord, downstream_exon_coord, mean_psi, 0))
 
         cursor.execute('''
         INSERT OR IGNORE INTO sample_info (event_id, de_novo, mean_psi_majiq, psi_sgseq, srr, majiq, sgseq)
         VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (event_id, denovo, median_psi, 0, srr, majiq, sgseq))
+        ''', (event_id, denovo, mean_psi, 0, srr, majiq, sgseq))
 
     conn.commit()
     conn.close()

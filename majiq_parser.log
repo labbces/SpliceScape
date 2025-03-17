@@ -1,0 +1,149 @@
+2025-03-17 10:53:30,420 - INFO - Processing summary.tsv
+2025-03-17 10:53:30,420 - INFO - Processing alt5prime.tsv
+2025-03-17 10:53:30,457 - INFO - Completed alt5prime.tsv processing
+2025-03-17 10:53:30,458 - INFO - Processing other.tsv
+2025-03-17 10:53:30,458 - INFO - Processing constitutive.tsv
+2025-03-17 10:53:30,756 - INFO - Completed constitutive.tsv processing
+2025-03-17 10:53:30,757 - INFO - Processing majiq_parser.log
+2025-03-17 10:53:30,757 - INFO - Processing p_alternate_first_exon.tsv
+2025-03-17 10:53:30,762 - INFO - Completed p_alternate_first_exon.tsv processing
+2025-03-17 10:53:30,762 - INFO - Processing alternate_first_exon.tsv
+2025-03-17 10:53:30,774 - INFO - Completed alternate_first_exon.tsv processing
+2025-03-17 10:53:30,774 - INFO - Processing heatmap.tsv
+2025-03-17 10:53:30,774 - INFO - Processing alt3prime.tsv
+2025-03-17 10:53:30,831 - INFO - Completed alt3prime.tsv processing
+2025-03-17 10:53:30,831 - INFO - Processing p_alternate_last_exon.tsv
+2025-03-17 10:53:30,838 - INFO - Completed p_alternate_last_exon.tsv processing
+2025-03-17 10:53:30,838 - INFO - Processing mutually_exclusive.tsv
+2025-03-17 10:53:30,839 - INFO - Completed mutually_exclusive.tsv processing
+2025-03-17 10:53:30,839 - INFO - Processing alt3and5prime.tsv
+2025-03-17 10:53:30,844 - INFO - Completed alt3and5prime.tsv processing
+2025-03-17 10:53:30,844 - INFO - Processing voila.log
+2025-03-17 10:53:30,844 - INFO - Processing alternate_last_exon.tsv
+2025-03-17 10:53:30,849 - INFO - Completed alternate_last_exon.tsv processing
+2025-03-17 10:53:30,850 - INFO - Processing orphan_junction.tsv
+2025-03-17 10:53:30,850 - INFO - Processing data.tsv
+2025-03-17 10:53:30,851 - INFO - Processing junctions.tsv
+2025-03-17 10:53:30,851 - INFO - Processing cassette.tsv
+2025-03-17 10:53:30,869 - INFO - Completed cassette.tsv processing
+2025-03-17 10:53:30,869 - INFO - Processing alternative_intron.tsv
+2025-03-17 10:53:30,873 - INFO - Completed alternative_intron.tsv processing
+2025-03-17 10:53:30,873 - INFO - Processing tandem_cassette.tsv
+2025-03-17 10:53:30,874 - INFO - Completed tandem_cassette.tsv processing
+2025-03-17 10:53:30,875 - INFO - Processing p_alt3prime.tsv
+2025-03-17 10:53:30,875 - INFO - Completed p_alt3prime.tsv processing
+2025-03-17 10:53:30,876 - INFO - Processing multi_exon_spanning.tsv
+2025-03-17 10:53:30,876 - INFO - Processing p_alt5prime.tsv
+2025-03-17 10:53:30,876 - INFO - Completed p_alt5prime.tsv processing
+2025-03-17 10:54:46,959 - INFO - Processing summary.tsv
+2025-03-17 10:54:46,960 - INFO - Processing alt5prime.tsv
+2025-03-17 10:54:47,006 - INFO - Completed alt5prime.tsv processing
+2025-03-17 10:54:47,006 - INFO - Processing other.tsv
+2025-03-17 10:54:47,006 - INFO - Processing constitutive.tsv
+2025-03-17 10:54:47,289 - INFO - Completed constitutive.tsv processing
+2025-03-17 10:54:47,289 - INFO - Processing majiq_parser.log
+2025-03-17 10:54:47,289 - INFO - Processing p_alternate_first_exon.tsv
+2025-03-17 10:54:47,293 - INFO - Completed p_alternate_first_exon.tsv processing
+2025-03-17 10:54:47,293 - INFO - Processing alternate_first_exon.tsv
+2025-03-17 10:54:47,305 - INFO - Completed alternate_first_exon.tsv processing
+2025-03-17 10:54:47,305 - INFO - Processing heatmap.tsv
+2025-03-17 10:54:47,305 - INFO - Processing alt3prime.tsv
+2025-03-17 10:54:47,376 - INFO - Completed alt3prime.tsv processing
+2025-03-17 10:54:47,377 - INFO - Processing p_alternate_last_exon.tsv
+2025-03-17 10:54:47,381 - INFO - Completed p_alternate_last_exon.tsv processing
+2025-03-17 10:54:47,382 - INFO - Processing mutually_exclusive.tsv
+2025-03-17 10:54:47,383 - INFO - Completed mutually_exclusive.tsv processing
+2025-03-17 10:54:47,383 - INFO - Processing alt3and5prime.tsv
+2025-03-17 10:54:47,388 - INFO - Completed alt3and5prime.tsv processing
+2025-03-17 10:54:47,388 - INFO - Processing voila.log
+2025-03-17 10:54:47,388 - INFO - Processing alternate_last_exon.tsv
+2025-03-17 10:54:47,391 - INFO - Completed alternate_last_exon.tsv processing
+2025-03-17 10:54:47,391 - INFO - Processing orphan_junction.tsv
+2025-03-17 10:54:47,391 - INFO - Processing data.tsv
+2025-03-17 10:54:47,391 - INFO - Processing junctions.tsv
+2025-03-17 10:54:47,391 - INFO - Processing cassette.tsv
+2025-03-17 10:54:47,406 - INFO - Completed cassette.tsv processing
+2025-03-17 10:54:47,406 - INFO - Processing alternative_intron.tsv
+2025-03-17 10:54:47,409 - INFO - Completed alternative_intron.tsv processing
+2025-03-17 10:54:47,410 - INFO - Processing tandem_cassette.tsv
+2025-03-17 10:54:47,410 - INFO - Completed tandem_cassette.tsv processing
+2025-03-17 10:54:47,410 - INFO - Processing p_alt3prime.tsv
+2025-03-17 10:54:47,411 - INFO - Completed p_alt3prime.tsv processing
+2025-03-17 10:54:47,411 - INFO - Processing multi_exon_spanning.tsv
+2025-03-17 10:54:47,411 - INFO - Processing p_alt5prime.tsv
+2025-03-17 10:54:47,412 - INFO - Completed p_alt5prime.tsv processing
+2025-03-17 10:55:41,127 - INFO - Processing summary.tsv
+2025-03-17 10:55:41,127 - INFO - Processing alt5prime.tsv
+2025-03-17 10:55:41,161 - INFO - Completed alt5prime.tsv processing
+2025-03-17 10:55:41,161 - INFO - Processing other.tsv
+2025-03-17 10:55:41,161 - INFO - Processing constitutive.tsv
+2025-03-17 10:55:41,445 - INFO - Completed constitutive.tsv processing
+2025-03-17 10:55:41,445 - INFO - Processing majiq_parser.log
+2025-03-17 10:55:41,445 - INFO - Processing p_alternate_first_exon.tsv
+2025-03-17 10:55:41,449 - INFO - Completed p_alternate_first_exon.tsv processing
+2025-03-17 10:55:41,449 - INFO - Processing alternate_first_exon.tsv
+2025-03-17 10:55:41,457 - INFO - Completed alternate_first_exon.tsv processing
+2025-03-17 10:55:41,457 - INFO - Processing heatmap.tsv
+2025-03-17 10:55:41,457 - INFO - Processing alt3prime.tsv
+2025-03-17 10:55:41,501 - INFO - Completed alt3prime.tsv processing
+2025-03-17 10:55:41,501 - INFO - Processing p_alternate_last_exon.tsv
+2025-03-17 10:55:41,506 - INFO - Completed p_alternate_last_exon.tsv processing
+2025-03-17 10:55:41,507 - INFO - Processing mutually_exclusive.tsv
+2025-03-17 10:55:41,508 - INFO - Completed mutually_exclusive.tsv processing
+2025-03-17 10:55:41,508 - INFO - Processing alt3and5prime.tsv
+2025-03-17 10:55:41,513 - INFO - Completed alt3and5prime.tsv processing
+2025-03-17 10:55:41,513 - INFO - Processing voila.log
+2025-03-17 10:55:41,513 - INFO - Processing alternate_last_exon.tsv
+2025-03-17 10:55:41,516 - INFO - Completed alternate_last_exon.tsv processing
+2025-03-17 10:55:41,516 - INFO - Processing orphan_junction.tsv
+2025-03-17 10:55:41,516 - INFO - Processing data.tsv
+2025-03-17 10:55:41,517 - INFO - Processing junctions.tsv
+2025-03-17 10:55:41,517 - INFO - Processing cassette.tsv
+2025-03-17 10:55:41,530 - INFO - Completed cassette.tsv processing
+2025-03-17 10:55:41,530 - INFO - Processing alternative_intron.tsv
+2025-03-17 10:55:41,534 - INFO - Completed alternative_intron.tsv processing
+2025-03-17 10:55:41,534 - INFO - Processing tandem_cassette.tsv
+2025-03-17 10:55:41,535 - INFO - Completed tandem_cassette.tsv processing
+2025-03-17 10:55:41,535 - INFO - Processing p_alt3prime.tsv
+2025-03-17 10:55:41,535 - INFO - Completed p_alt3prime.tsv processing
+2025-03-17 10:55:41,536 - INFO - Processing multi_exon_spanning.tsv
+2025-03-17 10:55:41,536 - INFO - Processing p_alt5prime.tsv
+2025-03-17 10:55:41,536 - INFO - Completed p_alt5prime.tsv processing
+2025-03-17 10:56:06,575 - INFO - Processing summary.tsv
+2025-03-17 10:56:06,575 - INFO - Processing alt5prime.tsv
+2025-03-17 10:56:06,611 - INFO - Completed alt5prime.tsv processing
+2025-03-17 10:56:06,611 - INFO - Processing other.tsv
+2025-03-17 10:56:06,611 - INFO - Processing constitutive.tsv
+2025-03-17 10:56:06,966 - INFO - Completed constitutive.tsv processing
+2025-03-17 10:56:06,969 - INFO - Processing majiq_parser.log
+2025-03-17 10:56:06,969 - INFO - Processing p_alternate_first_exon.tsv
+2025-03-17 10:56:06,975 - INFO - Completed p_alternate_first_exon.tsv processing
+2025-03-17 10:56:06,975 - INFO - Processing alternate_first_exon.tsv
+2025-03-17 10:56:06,987 - INFO - Completed alternate_first_exon.tsv processing
+2025-03-17 10:56:06,987 - INFO - Processing heatmap.tsv
+2025-03-17 10:56:06,987 - INFO - Processing alt3prime.tsv
+2025-03-17 10:56:07,081 - INFO - Completed alt3prime.tsv processing
+2025-03-17 10:56:07,081 - INFO - Processing p_alternate_last_exon.tsv
+2025-03-17 10:56:07,086 - INFO - Completed p_alternate_last_exon.tsv processing
+2025-03-17 10:56:07,086 - INFO - Processing mutually_exclusive.tsv
+2025-03-17 10:56:07,087 - INFO - Completed mutually_exclusive.tsv processing
+2025-03-17 10:56:07,087 - INFO - Processing alt3and5prime.tsv
+2025-03-17 10:56:07,097 - INFO - Completed alt3and5prime.tsv processing
+2025-03-17 10:56:07,098 - INFO - Processing voila.log
+2025-03-17 10:56:07,098 - INFO - Processing alternate_last_exon.tsv
+2025-03-17 10:56:07,103 - INFO - Completed alternate_last_exon.tsv processing
+2025-03-17 10:56:07,103 - INFO - Processing orphan_junction.tsv
+2025-03-17 10:56:07,103 - INFO - Processing data.tsv
+2025-03-17 10:56:07,104 - INFO - Processing junctions.tsv
+2025-03-17 10:56:07,104 - INFO - Processing cassette.tsv
+2025-03-17 10:56:07,123 - INFO - Completed cassette.tsv processing
+2025-03-17 10:56:07,123 - INFO - Processing alternative_intron.tsv
+2025-03-17 10:56:07,128 - INFO - Completed alternative_intron.tsv processing
+2025-03-17 10:56:07,128 - INFO - Processing tandem_cassette.tsv
+2025-03-17 10:56:07,129 - INFO - Completed tandem_cassette.tsv processing
+2025-03-17 10:56:07,129 - INFO - Processing p_alt3prime.tsv
+2025-03-17 10:56:07,130 - INFO - Completed p_alt3prime.tsv processing
+2025-03-17 10:56:07,130 - INFO - Processing multi_exon_spanning.tsv
+2025-03-17 10:56:07,131 - INFO - Processing p_alt5prime.tsv
+2025-03-17 10:56:07,132 - INFO - Completed p_alt5prime.tsv processing
+2025-03-17 10:56:07,366 - INFO - Completed adding to database
