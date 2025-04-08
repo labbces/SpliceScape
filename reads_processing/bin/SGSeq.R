@@ -52,7 +52,18 @@ bam <- getBamInfo(sample_info, yieldSize = NULL, cores = cores)
 analysis_features <- analyzeFeatures(bam, features = txFeatures, cores = cores)
 analysis_variants <- analyzeVariants(analysis_features, cores = cores)
 
+# GETTING EVENT COORDS
+genomic_coords <- rowRanges(analysis_variants)
+coord_df <- as.data.frame(genomic_coords)
+coord_df <- as.data.frame(rowRanges(analysis_variants))
+for (col in names(coord_df)) {
+  if (is.list(coord_df[[col]])) {
+    coord_df[[col]] <- sapply(coord_df[[col]], function(x) paste(x, collapse = ","))
+  }
+}
+
 # Export results to CSV
+# sgvc_fpkm <- variantFreq(analysis_variants)
 sgvc_fpkm <- variantFreq(analysis_variants)
 
 # Flatten the metadata columns
@@ -67,8 +78,15 @@ flat_fpkm[] <- lapply(flat_fpkm, function(x) if (is.list(x)) sapply(x, toString)
 result <- cbind(flat_mcols, flat_fpkm)
 
 # Write to CSV
+if (!dir.exists(opt$out)) {
+  dir.create(opt$out, recursive = TRUE, showWarnings = FALSE)
+}
 output <- paste0(opt$out, "/SGSeq_", opt$sra_id, ".csv")
 write.csv(result, file.path(output), row.names = FALSE)
+output_csv_path <- paste0(opt$out, "/SGSeq_coordinates_", opt$sra_id, ".csv")
+write.csv(coord_df, file.path(output_csv_path), row.names = FALSE)
+
+
 
 # Running example
 # Rscript SGSeq.R --gff /home/bia/LandscapeSplicingGrasses/data/Phytozome/PhytozomeV12/early_release/Athaliana_447_Araport11/annotation/Athaliana_447_Araport11.gene_exons.gff3 --cores 1 --path_to_bam /home/bia/LandscapeSplicingGrasses/Results/star/Athaliana_447Aligned.sortedByCoord.out.bam --sra_id SRR25663954 --out teste
