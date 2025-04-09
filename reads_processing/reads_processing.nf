@@ -1,23 +1,3 @@
-// params.reads = "SRR28642269"
-// make sure species name is as it is on Phytozome - at least starts equal
-// params.reads_file = "/home/bia.estevam/landscapeSplicingGrasses/nextflow_testing_zone/TEST_5SRR_list.txt"     
-// params.bbduk = "/Storage/progs/bbmap_35.85/bbduk2.sh" // no cluster no CENA
-// params.bbduk = "/home/beatrizestevam/progs/BBMap_35.85/bbmap/bbduk2.sh" // no computador do CENA
-// params.rref = "/Storage/progs/BBMap/resources/adapters.fa"
-// params.minlength = 60
-// params.trimq = 20
-// params.k = 27
-// params.r_libs = "/home/bia.estevam/R/library"
-// params.maxmem = 20
-// params.genomeFASTA = "/home/bia.estevam/landscapeSplicingGrasses/data/Phytozome/PhytozomeV12/early_release/Athaliana_447_Araport11/assembly/Athaliana_447_TAIR10.fa"
-// params.genomeGFF = "/home/bia.estevam/landscapeSplicingGrasses/data/Phytozome/PhytozomeV12/early_release/Athaliana_447_Araport11/annotation/Athaliana_447_Araport11.gene_exons.gff3"
-// params.threads = 10
-// params.species = "Athaliana_447"
-// params.majiq_path = "/home/bia.estevam/landscapeSplicingGrasses/majiq/bin"
-// params.genome = "/home/bia.estevam/landscapeSplicingGrasses/data/Phytozome/PhytozomeV12/early_release"
-// params.genome_path = "/home/bia.estevam/landscapeSplicingGrasses/data/Phytozome/PhytozomeV12/early_release/Athaliana_447_Araport11/assembly"
-// params.sgseq_cores = 4
-
 
 // Getting FTP from SRA 
 
