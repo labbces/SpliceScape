@@ -140,7 +140,7 @@ process mappingSTAR{
 
 // splicing analysis - SGSeq
 process sgseq{   
-    publishDir "$projectDir/SGSeq", mode "move"  
+    publishDir "$projectDir/SGSeq", mode: "move"  
     errorStrategy 'ignore'
 
     input:
@@ -189,7 +189,7 @@ process majiq_setting{
 
 // splicing analysis - MAJIQ
 process MAJIQ{   
-    publishDir "$projectDir/MAJIQ", mode "move"    
+    publishDir "$projectDir/MAJIQ", mode: "move"    
     errorStrategy 'ignore'
     input:
         val species
