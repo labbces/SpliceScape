@@ -2,8 +2,8 @@
 // Getting FTP from SRA 
 
 process getReadFTP {
-    publishDir "$projectDir/FTP"
-    maxForks 2
+    // publishDir "$projectDir/FTP"
+    errorStrategy 'ignore'
     input:
     val sra_accession
 
@@ -19,8 +19,9 @@ process getReadFTP {
 // Download reads from FTP file
 
 process downloadReadFTP {
-    publishDir "$projectDir/reads", overwrite: false
+    // publishDir "$projectDir/reads", overwrite: false
     errorStrategy 'ignore'
+
     input:
         tuple path(json_file), val(sra_accession)
 
@@ -29,15 +30,18 @@ process downloadReadFTP {
         tuple path('*_1.fastq.gz'), path('*_2.fastq.gz'), val(sra_accession)
     
     """
-    download_from_json.py --json $json_file
+    download_from_json.py --json $json_file  && \\
+    original_file="\$(readlink -f ${json_file})"
+    rm "\$original_file"
     """
 }
 
 // Cleaning reads with BBDuK
 process runBBDuK{   
-    publishDir "$projectDir/bbduk"
+    // publishDir "$projectDir/bbduk"
     errorStrategy 'retry'
     maxRetries 3
+
     input:
         tuple path(reads1), path(reads2), val(sra_accession)
         val minlength
@@ -55,7 +59,7 @@ process runBBDuK{
     def contaminants_fa = "rref=$rref"
     def args = "minlength=${minlength} qtrim=w trimq=${trimq} showspeed=t k=${k} overwrite=true"
     """
-    maxmem=${params.maxmem}g
+    maxmem=${params.maxmem}
     ${params.bbduk}  \\
         -Xmx\$maxmem \\
         $raw \\
@@ -63,14 +67,18 @@ process runBBDuK{
         threads=$task.cpus \\
         $contaminants_fa \\
         $args \\
-        &> ${sra_accession}.bbduk.log
+        &> ${sra_accession}.bbduk.log && \\
+    original_file="\$(readlink -f ${reads1})"
+    rm "\$original_file"
+    original_file_2="\$(readlink -f ${reads2})"
+    rm "\$original_file_2"
     """
 }  
 // /Storage/progs/bbmap_35.85/bbduk2.sh -Xmx40g threads=4 in1="SRR28642268_1.fastq.gz" in2="SRR28642268_2.fastq.gz" out1="SRR28642268.trimmed.R1.fastq.gz"  out2="SRR28642268.trimmed.R2.fastq.gz" ref="/Storage/progs/Trimmomatic-0.38/adapters/TruSeq3-SE.fa" minlength=60 qtrim=w trimq=20 showspeed=t k=27 overwrite=true > bbduk.log 2>&1
 
 // mapping with STAR - Genome Generate 
 process genomeGenerateSTAR{ 
-    publishDir "$projectDir/STAR"  
+    // publishDir "$projectDir/STAR"  
     errorStrategy 'finish'
     input:
         path genomeFASTA
@@ -95,8 +103,9 @@ process genomeGenerateSTAR{
 
 // mapping with STAR - Mapping
 process mappingSTAR{   
-    publishDir "$projectDir/STAR_mapping"  
-    errorStrategy 'finish'
+    // publishDir "$projectDir/STAR_mapping"  
+    errorStrategy 'ignore'
+
     input:
         tuple path(reads1), path(reads2), val(sra_accession)
         path genome_index_dir
@@ -121,15 +130,19 @@ process mappingSTAR{
         --outSAMstrandField intronMotif \
         --twopassMode Basic 
     
-    samtools index ${species}/${sra_accession}/${species}_${sra_accession}_Aligned.sortedByCoord.out.bam
+    samtools index ${species}/${sra_accession}/${species}_${sra_accession}_Aligned.sortedByCoord.out.bam && \\
+    original_file="\$(readlink -f ${reads1})"
+    rm "\$original_file"
+    original_file_2="\$(readlink -f ${reads2})"
+    rm "\$original_file_2"
     """
 }
 
-
 // splicing analysis - SGSeq
 process sgseq{   
-    publishDir "$projectDir/SGSeq"  
-    errorStrategy 'finish'
+    publishDir "$projectDir/SGSeq", mode "move"  
+    errorStrategy 'ignore'
+
     input:
         tuple path(bam_dir), path(bam_index), path(bam_file), val(sra_accession)
         path genomeGFF
@@ -139,7 +152,8 @@ process sgseq{
 
 
     output:
-        tuple path("${species}/SGSeq_${sra_accession}.csv"), val(sra_accession)
+        tuple path("${species}/SGSeq_${sra_accession}.csv"), path("${species}/SGSeq_coordinates_${sra_accession}.csv"), val(sra_accession)
+        val("SGSeq_concluded"), emit: status
 
     script: 
     def fileNamePrefix = "${species}"
@@ -151,12 +165,13 @@ process sgseq{
 
 // Setting file generator for majiq
 process majiq_setting{   
-    publishDir "$projectDir/MAJIQ"  
-    errorStrategy 'finish'
+    // publishDir "$projectDir/MAJIQ", mode "move"    
+    errorStrategy 'ignore'
     input:
         tuple path(bam_dir), path(bam_index), path(bam_file), val(sra_accession)
         val species
         val genome_path 
+        val status
 
 
     output:
@@ -174,13 +189,15 @@ process majiq_setting{
 
 // splicing analysis - MAJIQ
 process MAJIQ{   
-    publishDir "$projectDir/MAJIQ"  
-    errorStrategy 'finish'
+    publishDir "$projectDir/MAJIQ", mode "move"    
+    errorStrategy 'ignore'
     input:
         val species
         path majiq_path 
         path genomeGFF
         tuple path(settings_file), val(sra_accession)
+        tuple path(bam_dir), path(bam_index), path(bam_file), val(sra_accession)
+
 
     output:
         path ("psi/${species}/${sra_accession}/${sra_accession}.psi.tsv")
@@ -196,7 +213,11 @@ process MAJIQ{
     """
     ${majiq_path}/majiq build ${genomeGFF} --conf ${settings_file} --output $build_output_directory
     ${majiq_path}/majiq psi $build_output_directory/*.majiq --name $sra_accession --output $psi_output_directory
-    ${majiq_path}/voila modulize $build_output_directory/splicegraph.sql $psi_output_directory/*.psi.voila -d $voila_output_directory --keep-constitutive
+    ${majiq_path}/voila modulize $build_output_directory/splicegraph.sql $psi_output_directory/*.psi.voila -d $voila_output_directory --keep-constitutive && \\
+    original_file="\$(readlink -f ${bam_index})"
+    rm "\$original_file"
+    original_file_2="\$(readlink -f ${bam_file})"
+    rm "\$original_file_2"
     """
 }
 
@@ -226,9 +247,10 @@ workflow {
 
     mapping = mappingSTAR(running_bbduk, genome_gen, threads, species)
 
-    majiq_setting = majiq_setting(mapping,species, genome_path)
-    majiq = MAJIQ(species, majiq_path, genomeGFF, majiq_setting)
+    (sgseq_run, status) = sgseq(mapping, genomeGFF, cores, species, r_libs) 
 
-    sgseq_run = sgseq(mapping, genomeGFF, cores, species, r_libs) 
+    majiq_setting = majiq_setting(mapping,species, genome_path, status)
+    majiq = MAJIQ(species, majiq_path, genomeGFF, majiq_setting, mapping)
+
     
     }
