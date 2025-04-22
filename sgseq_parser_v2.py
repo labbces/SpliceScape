@@ -2,9 +2,12 @@
 
 import csv
 import pandas as pd
+import pyranges as pr
 import pprint
 
 sgseq_coords = "/home/bia/testeee/SGSeq_coordinates_SRR25663954.csv"
+gff_file = "/home/bia/LandscapeSplicingGrasses/data/Phytozome/PhytozomeV12/early_release/Athaliana_447_Araport11/annotation/Athaliana_447_Araport11.gene_exons.gff3"
+sgseq_output = "/home/bia/testeee/SGSeq_SRR25663954.csv"
 
 # Abrir o arquivo CSV
 coords_data = {}
@@ -36,20 +39,25 @@ with open(sgseq_coords, newline='', encoding='utf-8') as csvfile:
                         if coord not in coords_data[geneName][transcript][feature_type]:
                             coords_data[geneName][transcript][feature_type].append(coord) 
 # pprint.pp(coords_data["AT1G01210"]["AT1G01210.1"].keys())
-import pyranges as pr
-gff_file = "/home/bia/LandscapeSplicingGrasses/data/Phytozome/PhytozomeV12/early_release/Athaliana_447_Araport11/annotation/Athaliana_447_Araport11.gene_exons.gff3"
-def get_exon_coords(gff_file, chr, gene, junction_coord):
-    gff = pr.read_gff3(gff_file)
+print("done coords csv analysis")
 
+# functions 
+gff = pr.read_gff3(gff_file)
+def get_exon_coords(chr, gene, junction_coord):
+    
     junction_start, junction_end = map(int, junction_coord.split('-'))
 
+    # getting exon coordinates for specific gene
     exons = gff[gff.Feature == 'exon']
     exons = gff[gff.Chromosome == chr]
     exons = exons[exons.Parent.str.contains(gene, case=False, na=False)]
 
-    exon_encontrado = None
-    exon_anterior = None
-    exon_proximo = None
+    # to keep track of upstream, current and downstream exon 
+    exon_anterior_start = None
+    exon_proximo_start = None
+
+    exon_anterior_end = None
+    exon_proximo_end = None
 
     result = {
         'start_exon': None,
@@ -66,73 +74,36 @@ def get_exon_coords(gff_file, chr, gene, junction_coord):
     for start, end in zip(exons.Start, exons.End):
 
         if start <= junction_start <= end:
-            result['start_exon'] = (start, end)
-            result['start_in_exon'] = True  
+            result['start_exon'] = [start, end]
+        elif end < junction_start:
+            exon_anterior_start = [start, end]
+        #elif exon_proximo_start is None and start > junction_start:
+            #exon_proximo_start = [start, end]
+        
         
         if start <= junction_end <= end:
-            result['end_exon'] = (start, end)
-            result['end_in_exon'] = True 
-
+            result['end_exon'] = [start, end]
+        #elif end < junction_end:
+            #exon_anterior_end = [start, end]
+        elif start > junction_end:
+            exon_proximo_end = [start, end]
         
-        elif end < coord:
-            exon_anterior = [start, end]
-        elif start > coord:
-            exon_proximo = [start, end]
-            break  
+        if exon_proximo_end is not None and exon_anterior_start is not None:
+            break
 
-    if exon_encontrado is not None:
-        return start, end, 1, 1, "exon"
-    else:
-        # print("A coordenada está em um íntron. Procurando o éxon anterior e o próximo éxon...")
-        if exon_anterior is not None:
-            start_up = exon_anterior[0]
-            end_up = exon_anterior[1]
-        else:
-            #print("Não há éxon anterior.")
-            start_up = 0
-            end_up = 0
+    if result['start_exon'] is None: # start juction is within an intron
+        result['start_exon'] = exon_anterior_start
 
-        if exon_proximo is not None:
-            start_down = exon_proximo[0]
-            end_down = exon_proximo[1]
-        else:
-            #print("Não há próximo éxon.")
-            start_down = 0
-            end_down = 0
+    if result['end_exon'] is None: # end juction is within an intron
+        result['end_exon'] = exon_proximo_end
+
+    start_up = result['start_exon'][0]
+    end_up = result['start_exon'][1]
+    start_down = result['end_exon'][0]
+    end_down = result['end_exon'][1]
+
+    return start_up, end_up, start_down, end_down
         
-        return start_up, end_up, start_down, end_down, "intron"
-        
-
-'''def get_flanking_exons(juction, exon1, exon2):
-    for coord in coords:
-        for tx in linha["txName"].split(","):
-            tx = tx.strip()
-            if "J" in coords_data[linha["geneName"]][tx].keys():
-                for complete_coord in coords_data[linha["geneName"]][tx]["J"]:
-                    if coord in complete_coord:
-                        exon = coord
-
-                        gene_name = linha["geneName"]
-                        seqid = linha["seqid"]
-                        from_coord = complete_coord.split("-")[0]
-                        to_coord = complete_coord.split("-")[1]
-                        strand = linha["strand"]
-                        event_type = linha["variantType"].split(":")[0]
-                        get_exon_coords(gff_file, seqid, gene_name, coord)
-                        full_coord = f"{seqid}:{upstream_start},{junction_coord_start}-{junction_coord_end},{downstream_end}"
-                        event_id = f"{gene_name}_{full_coord}_{strand}_{event_type}"
-                        continue'''
-
-
-sgseq_output = "/home/bia/testeee/SGSeq_SRR25663954.csv"
-
-# Abrir o arquivo CSV
-df = pd.read_csv(sgseq_output, 
-                 delimiter=',', 
-                 quotechar='"', 
-                 encoding='utf-8')
-
-
 # Fixed the typo in 'variants' (you had 'variants' vs 'variants')
 def classify_variant(variant_str):
     if pd.isna(variant_str):  # Handle NaN values
@@ -148,11 +119,6 @@ def classify_variant(variant_str):
     has_RI = any("RI" in v.upper() for v in variants)
     
     return variant_class, has_RI
-
-# Apply the classification
-df[["variant_class", "contains_RI"]] = df["variantType"].apply(
-    lambda x: pd.Series(classify_variant(x))
-)
 
 
 def split_from_to(from_column, to_column):
@@ -172,47 +138,109 @@ def split_from_to(from_column, to_column):
         
     return pd.Series([from_seqid, from_start, to_end, from_strand])
 
+
+# Abrir o arquivo CSV
+df = pd.read_csv(sgseq_output, 
+                 delimiter=',', 
+                 quotechar='"', 
+                 encoding='utf-8')
+
+df[["variant_class", "contains_RI"]] = df["variantType"].apply(
+    lambda x: pd.Series(classify_variant(x))
+)
+
 df[["seqid", "start", "end", "strand"]] = df.apply(
     lambda row: split_from_to(row["from"], row["to"]), 
     axis=1
 )
 
-# print(df.head())
-# Group by eventID and filter for groups with any simple variants
+
 grouped = df.groupby('eventID')
 c = 0
 output = {}
+print("starting analysis")
 for name, group in grouped:
     if "simple" in group["variant_class"].values:
         for indice, linha in group.iterrows():
             coords = [linha["start"], linha["end"]]
-            try:
-                if "RI" not in linha["variantType"]:
-                    for coord in coords:
-                            for tx in linha["txName"].split(","):
-                                tx = tx.strip()
-                                if "J" in coords_data[linha["geneName"]][tx].keys():
-                                    for complete_coord in coords_data[linha["geneName"]][tx]["J"]:
-                                        if coord in complete_coord:
-                                            # at least one from to coord is in junction coord for assigned transcript for simple non RI splice type 
-                                            exon = coord
+            if "RI" not in linha["variantType"]:
+                for coord in coords:
+                    for tx in linha["txName"].split(","):
+                        if "J" in coords_data[linha["geneName"]][tx].keys():
+                            for complete_coord in coords_data[linha["geneName"]][tx]["J"]:
+                                if coord in complete_coord:
+                                    # at least one from to coord is in junction coord for assigned transcript for simple non RI splice type 
+                                    print(complete_coord)
 
-                                            gene_name = linha["geneName"]
-                                            seqid = linha["seqid"]
-                                            from_coord = complete_coord.split("-")[0]
-                                            to_coord = complete_coord.split("-")[1]
-                                            strand = linha["strand"]
-                                            event_type = linha["variantType"].split(":")[0]
-                                            start_up, end_up, start_down, end_down, coord_loc_type = get_exon_coords(gff_file, seqid, gene_name, coord)
-                                            full_coord = f"{seqid}:{start_up},{complete_coord},{end_down}"
-                                            print(gene_name, seqid, from_coord, to_coord, strand, event_type, start_up, end_up, start_down, end_down, coord_loc_type, full_coord, sep="\t")
-                                            # event_id = f"{gene_name}_{full_coord}_{strand}_{event_type}"
-                                            continue
-                                            
-            except: 
-                #print(linha["variantType"], tx, coord)
-                continue
+                                    gene_name = linha["geneName"]
+                                    seqid = linha["seqid"]
+                                    from_coord = complete_coord.split("-")[0]
+                                    to_coord = complete_coord.split("-")[1]
+                                    strand = linha["strand"]
+                                    event_type = linha["variantType"].split(":")[0]
+                                    start_up, end_up, start_down, end_down = get_exon_coords(seqid, gene_name, complete_coord)
+                                    full_coord = f"{seqid}:{start_up},{complete_coord},{end_down}"
+                                    print(gene_name, seqid, from_coord, to_coord, strand, event_type, start_up, end_up, start_down, end_down, full_coord, sep="\t")
+                                    # event_id = f"{gene_name}_{full_coord}_{strand}_{event_type}"
+                                    continue
+
+
+
+
+
     elif "complex" in group["variant_class"].values:
+        continue
+
+
+
+
+
+
+
+
+
+# print(df.head())
+# Group by eventID and filter for groups with any simple variants
+# grouped = df.groupby('eventID')
+c = 0
+output = {}
+print("starting events anslysis")
+for indice, linha in df.iterrows():
+    print(linha["variantType"])
+    if "simple" in linha["variant_class"]:
+        coords = [linha["start"], linha["end"]]
+        try:
+            if "RI" not in linha["variantType"]:
+                print("Not RI type")
+                for coord in coords:
+                    for tx in linha["txName"].split(","):
+                        tx = tx.strip()
+                        print(f'working with {tx} transcript')
+                        if "J" in coords_data[linha["geneName"]][tx].keys():
+                            print("we do have junctions")
+                            for complete_coord in coords_data[linha["geneName"]][tx]["J"]:
+                                if coord in complete_coord:
+                                    print("found matched coord")
+                                    # at least one from to coord is in junction coord for assigned transcript for simple non RI splice type 
+                                    exon = coord
+
+                                    gene_name = linha["geneName"]
+                                    seqid = linha["seqid"]
+                                    from_coord = complete_coord.split("-")[0]
+                                    to_coord = complete_coord.split("-")[1]
+                                    strand = linha["strand"]
+                                    event_type = linha["variantType"].split(":")[0]
+                                    start_up, end_up, start_down, end_down, coord_loc_type = get_exon_coords(gff_file, seqid, gene_name, coord)
+                                    full_coord = f"{seqid}:{start_up},{complete_coord},{end_down}"
+                                    print(gene_name, seqid, from_coord, to_coord, strand, event_type, start_up, end_up, start_down, end_down, coord_loc_type, full_coord, sep="\t")
+                                    # event_id = f"{gene_name}_{full_coord}_{strand}_{event_type}"
+                                    continue
+                                            
+        except: 
+            print('something went wrong')
+            #print(linha["variantType"], tx, coord)
+            continue
+    elif "complex" in df["variant_class"].values:
         #print(group["variantType"])
         continue
     else:

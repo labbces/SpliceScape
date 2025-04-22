@@ -292,7 +292,7 @@ def add_to_database(db, processed_data):
     for event_id, values in processed_data.items():
         search, gene_name, gene_id, seqid, strand, event_type, junction_coord_start, junction_coord_end, coord, full_coord, upstream_exon_coord, downstream_exon_coord, denovo, mean_psi, majiq, sgseq, srr = values
 
-        cursor.execute('''
+        cursor.execute(''' 
         INSERT INTO splicing_events 
             (event_id, search, gene_name, gene_id, seqid, strand, event_type, 
             start, end, coord, full_coord, upstream_exon_coord, downstream_exon_coord, 

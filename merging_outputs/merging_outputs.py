@@ -18,7 +18,7 @@ def create_tables(db):
             CREATE TABLE IF NOT EXISTS splicing_events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             event_id TEXT UNIQUE,
-            search TEXT,
+            search TEXT INDEX,
             gene_name TEXT,
             gene_id TEXT,
             seqid TEXT,
