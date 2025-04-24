@@ -193,7 +193,7 @@ process majiq_setting{
     def build_output_directory = "build/${species}/${sra_accession}"
     def psi_output_directory = "psi/${species}/${sra_accession}"
     """
-    majiq_settings_file_creator.py --output_dic "$settings_output_dic" --species "$species" --sra "$sra_accession" --bam_dir "${bamdir}" --assembly "$genome_path" --output_star "$fileNamePrefix"
+    majiq_settings_file_creator.py --output_dic "$settings_output_dic" --species "$species" --sra "$sra_accession" --bam_dir "${bam_dir}" --assembly "$genome_path" --output_star "$fileNamePrefix"
     
     ${majiq_path}/majiq build ${genomeGFF} --conf $settings_output_dic/majiq_settings_${species}_${sra_accession}.ini --output $build_output_directory
     ${majiq_path}/majiq psi $build_output_directory/*.majiq --name $sra_accession --output $psi_output_directory && \\
@@ -222,7 +222,7 @@ process MAJIQ{
 
 
     output:
-        tuple path ("voila/${species}/${sra_accession}/*")
+        path ("voila/${species}/${sra_accession}/*")
 
     script: 
     def voila_output_directory = "voila/${species}/${sra_accession}"
