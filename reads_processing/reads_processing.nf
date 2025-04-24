@@ -32,7 +32,7 @@ process downloadReadFTP {
     """
     download_from_json.py --json $json_file  && \\
     original_file="\$(readlink -f ${json_file})"
-    rm "\$original_file"
+    echo "" > "\$original_file"
     """
 }
 
@@ -69,9 +69,9 @@ process runBBDuK{
         $args \\
         &> ${sra_accession}.bbduk.log && \\
     original_file="\$(readlink -f ${reads1})"
-    rm "\$original_file"
+    echo "" > "\$original_file"
     original_file_2="\$(readlink -f ${reads2})"
-    rm "\$original_file_2"
+    echo "" > "\$original_file_2"
     """
 }  
 // /Storage/progs/bbmap_35.85/bbduk2.sh -Xmx40g threads=4 in1="SRR28642268_1.fastq.gz" in2="SRR28642268_2.fastq.gz" out1="SRR28642268.trimmed.R1.fastq.gz"  out2="SRR28642268.trimmed.R2.fastq.gz" ref="/Storage/progs/Trimmomatic-0.38/adapters/TruSeq3-SE.fa" minlength=60 qtrim=w trimq=20 showspeed=t k=27 overwrite=true > bbduk.log 2>&1
@@ -132,9 +132,9 @@ process mappingSTAR{
     
     samtools index ${species}/${sra_accession}/${species}_${sra_accession}_Aligned.sortedByCoord.out.bam && \\
     original_file="\$(readlink -f ${reads1})"
-    rm "\$original_file"
+    echo "" > "\$original_file"
     original_file_2="\$(readlink -f ${reads2})"
-    rm "\$original_file_2"
+    echo "" > "\$original_file_2"
     """
 }
 
@@ -154,6 +154,7 @@ process sgseq{
     output:
         tuple path("${species}/SGSeq_${sra_accession}.csv"), path("${species}/SGSeq_coordinates_${sra_accession}.csv"), val(sra_accession)
         val("SGSeq_concluded"), emit: status
+        tuple path(bam_dir), path(bam_index), path(bam_file), val(sra_accession)
 
     script: 
     def fileNamePrefix = "${species}"
@@ -172,17 +173,35 @@ process majiq_setting{
         val species
         val genome_path 
         val status
+        path majiq_path
+        path genomeGFF
 
 
     output:
-        tuple path("settings/${species}/majiq_settings_${species}_${sra_accession}.ini"), val(sra_accession)
+        // tuple path("settings/${species}/majiq_settings_${species}_${sra_accession}.ini"), val(sra_accession)
+        tuple  path("settings/${species}/majiq_settings_${species}_${sra_accession}.ini"),
+        path ("psi/${species}/${sra_accession}/${sra_accession}.psi.tsv"),
+        path ("psi/${species}/${sra_accession}/${sra_accession}.psi.voila"),
+        path ("psi/${species}/${sra_accession}/psi_majiq.log"),
+        path ("build/${species}/${sra_accession}/splicegraph.sql"),
+        val(sra_accession)
 
     script: 
     def settings_output_dic = "settings/${species}/"
     def fileNamePrefix = "${species}_${sra_accession}_Aligned.sortedByCoord.out"
-    def bamdir = "$projectDir/STAR_mapping/${species}/${bam_dir}"
+
+    def build_output_directory = "build/${species}/${sra_accession}"
+    def psi_output_directory = "psi/${species}/${sra_accession}"
     """
-    majiq_settings_file_creator.py --output_dic "$settings_output_dic" --species "$species" --sra "$sra_accession" --bam_dir "$bamdir" --assembly "$genome_path" --output_star "$fileNamePrefix"
+    majiq_settings_file_creator.py --output_dic "$settings_output_dic" --species "$species" --sra "$sra_accession" --bam_dir "${bamdir}" --assembly "$genome_path" --output_star "$fileNamePrefix"
+    
+    ${majiq_path}/majiq build ${genomeGFF} --conf $settings_output_dic/majiq_settings_${species}_${sra_accession}.ini --output $build_output_directory
+    ${majiq_path}/majiq psi $build_output_directory/*.majiq --name $sra_accession --output $psi_output_directory && \\
+    
+    original_file="\$(readlink -f ${bam_index})"
+    echo "" > "\$original_file"
+    original_file_2="\$(readlink -f ${bam_file})"
+    echo "" > "\$original_file_2"
     """
 }
 
@@ -194,30 +213,21 @@ process MAJIQ{
     input:
         val species
         path majiq_path 
-        path genomeGFF
-        tuple path(settings_file), val(sra_accession)
-        tuple path(bam_dir), path(bam_index), path(bam_file), val(sra_accession)
+        tuple  path(settings_file),
+        path (psi_tsv),
+        path (psi_voila),
+        path (psi_majiq_log),
+        path (build_splicegraph_sql),
+        val(sra_accession)
 
 
     output:
-        path ("psi/${species}/${sra_accession}/${sra_accession}.psi.tsv")
-        path ("psi/${species}/${sra_accession}/${sra_accession}.psi.voila")
-        path ("psi/${species}/${sra_accession}/psi_majiq.log")
-        path ("build/${species}/${sra_accession}/splicegraph.sql")
         tuple path ("voila/${species}/${sra_accession}/*")
 
     script: 
-    def build_output_directory = "build/${species}/${sra_accession}"
-    def psi_output_directory = "psi/${species}/${sra_accession}"
     def voila_output_directory = "voila/${species}/${sra_accession}"
     """
-    ${majiq_path}/majiq build ${genomeGFF} --conf ${settings_file} --output $build_output_directory
-    ${majiq_path}/majiq psi $build_output_directory/*.majiq --name $sra_accession --output $psi_output_directory
-    ${majiq_path}/voila modulize $build_output_directory/splicegraph.sql $psi_output_directory/*.psi.voila -d $voila_output_directory --keep-constitutive && \\
-    original_file="\$(readlink -f ${bam_index})"
-    rm "\$original_file"
-    original_file_2="\$(readlink -f ${bam_file})"
-    rm "\$original_file_2"
+    ${majiq_path}/voila modulize ${build_splicegraph_sql} ${psi_voila} -d $voila_output_directory --keep-constitutive && \\
     """
 }
 
@@ -247,10 +257,10 @@ workflow {
 
     mapping = mappingSTAR(running_bbduk, genome_gen, threads, species)
 
-    (sgseq_run, status) = sgseq(mapping, genomeGFF, cores, species, r_libs) 
+    (sgseq_run, status, mapping2) = sgseq(mapping, genomeGFF, cores, species, r_libs) 
 
-    majiq_setting = majiq_setting(mapping,species, genome_path, status)
-    majiq = MAJIQ(species, majiq_path, genomeGFF, majiq_setting, mapping)
+    majiq_setting = majiq_setting(mapping2 ,species, genome_path, status, majiq_path, genomeGFF)
+    majiq = MAJIQ(species, majiq_path, majiq_setting)
 
     
     }
