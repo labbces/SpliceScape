@@ -5,6 +5,7 @@ process getReadFTP {
     publishDir "$projectDir/cleanup"
     cache 'lenient'
     errorStrategy 'ignore'
+    
     input:
     val sra_accession
 
@@ -21,8 +22,8 @@ process getReadFTP {
 
 process downloadReadFTP {
     publishDir "$projectDir/cleanup"
+    // overwrite: true
     cache 'lenient'
-    // publishDir "$projectDir/reads", overwrite: false
     errorStrategy 'ignore'
 
     input:
@@ -31,21 +32,17 @@ process downloadReadFTP {
     output:
         // path '*.fastq.gz'
         tuple path('*_1.fastq.gz'), path('*_2.fastq.gz'), val(sra_accession)
+        path(json_file)
     
     """
-    download_from_json.py --json $json_file  && \\
-
-    original_file="\$(readlink -f ${json_file})" && \\
-    tam=\$(stat --format=%s "\$original_file") && \\
-    truncate -s "\$tam" "\$original_file"
+    download_from_json.py --json $json_file 
     """
 }
 
 // Cleaning reads with BBDuK
-process runBBDuK{   
+process runBBDuK {   
     publishDir "$projectDir/cleanup"
     cache 'lenient'
-    // publishDir "$projectDir/bbduk"
     errorStrategy 'retry'
     maxRetries 3
 
@@ -55,12 +52,11 @@ process runBBDuK{
         val trimq
         val k
         path rref
-        path files_to_clean
+        path json_file
                
     
     output:
         tuple path('*.trimmed.R1.fastq.gz'), path('*.trimmed.R2.fastq.gz'), val(sra_accession)
-        tuple path(${files_to_clean}), 
     
     script: 
     def raw = "in1=${reads1} in2=${reads2}"
@@ -78,10 +74,13 @@ process runBBDuK{
         $args \\
         &> ${sra_accession}.bbduk.log && \\
 
+    original_file_1="\$(readlink -f ${json_file})" && \\
+    tam=\$(stat --format=%s "\$original_file_1") && \\
+    truncate -s "\$tam" "\$original_file_1"  && \\
+
     original_file="\$(readlink -f ${reads1})"  && \\
     tam=\$(stat --format=%s "\$original_file") && \\
     truncate -s "\$tam" "\$original_file" && \\
-
 
     original_file_2="\$(readlink -f ${reads2})"  && \\
     tam=\$(stat --format=%s "\$original_file_2") && \\
@@ -91,10 +90,9 @@ process runBBDuK{
 // /Storage/progs/bbmap_35.85/bbduk2.sh -Xmx40g threads=4 in1="SRR28642268_1.fastq.gz" in2="SRR28642268_2.fastq.gz" out1="SRR28642268.trimmed.R1.fastq.gz"  out2="SRR28642268.trimmed.R2.fastq.gz" ref="/Storage/progs/Trimmomatic-0.38/adapters/TruSeq3-SE.fa" minlength=60 qtrim=w trimq=20 showspeed=t k=27 overwrite=true > bbduk.log 2>&1
 
 // mapping with STAR - Genome Generate 
-process genomeGenerateSTAR{ 
+process genomeGenerateSTAR { 
     publishDir "$projectDir/genomeGenerate"
     cache 'lenient'
-    // publishDir "$projectDir/STAR"  
     errorStrategy 'finish'
     input:
         path genomeFASTA
@@ -121,7 +119,6 @@ process genomeGenerateSTAR{
 process mappingSTAR{   
     publishDir "$projectDir/cleanup"
     cache 'lenient'
-    // publishDir "$projectDir/STAR_mapping"  
     errorStrategy 'ignore'
 
     input:
@@ -171,7 +168,6 @@ process sgseq{
         val cores
         val species
         val r_libs
-
 
     output:
         tuple path("${species}/SGSeq_${sra_accession}.csv"), path("${species}/SGSeq_coordinates_${sra_accession}.csv"), val(sra_accession)
@@ -280,9 +276,9 @@ workflow {
 
     read_id = Channel.fromPath(params.reads_file).splitText().map { line -> line.trim() }.filter { line -> !line.isEmpty() }
     genjson = getReadFTP(read_id)
-    (download, files_to_clean) = downloadReadFTP 
+    (download, file_to_clean) = downloadReadFTP 
     
-    (running_bbduk, files_to_clean2) = runBBDuK(download, minlength, trimq, k, rref, files_to_clean)
+    running_bbduk = runBBDuK(download, minlength, trimq, k, rref, file_to_clean)
 
     mapping = mappingSTAR(running_bbduk, genome_gen, threads, species)
 
@@ -292,4 +288,4 @@ workflow {
     majiq = MAJIQ(species, majiq_path, majiq_setting)
 
     
-    }
+}
