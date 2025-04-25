@@ -276,7 +276,7 @@ workflow {
 
     read_id = Channel.fromPath(params.reads_file).splitText().map { line -> line.trim() }.filter { line -> !line.isEmpty() }
     genjson = getReadFTP(read_id)
-    (download, file_to_clean) = downloadReadFTP 
+    (download, file_to_clean) = downloadReadFTP(genjson) 
     
     running_bbduk = runBBDuK(download, minlength, trimq, k, rref, file_to_clean)
 
