@@ -2,7 +2,8 @@
 // Getting FTP from SRA 
 
 process getReadFTP {
-    // publishDir "$projectDir/FTP"
+    publishDir "$projectDir/cleanup"
+    cache 'lenient'
     errorStrategy 'ignore'
     input:
     val sra_accession
@@ -19,6 +20,8 @@ process getReadFTP {
 // Download reads from FTP file
 
 process downloadReadFTP {
+    publishDir "$projectDir/cleanup"
+    cache 'lenient'
     // publishDir "$projectDir/reads", overwrite: false
     errorStrategy 'ignore'
 
@@ -31,13 +34,17 @@ process downloadReadFTP {
     
     """
     download_from_json.py --json $json_file  && \\
-    original_file="\$(readlink -f ${json_file})"
-    echo "" > "\$original_file"
+
+    original_file="\$(readlink -f ${json_file})" && \\
+    tam=\$(stat --format=%s "\$original_file") && \\
+    truncate -s "\$tam" "\$original_file"
     """
 }
 
 // Cleaning reads with BBDuK
 process runBBDuK{   
+    publishDir "$projectDir/cleanup"
+    cache 'lenient'
     // publishDir "$projectDir/bbduk"
     errorStrategy 'retry'
     maxRetries 3
@@ -48,10 +55,12 @@ process runBBDuK{
         val trimq
         val k
         path rref
+        path files_to_clean
                
     
     output:
         tuple path('*.trimmed.R1.fastq.gz'), path('*.trimmed.R2.fastq.gz'), val(sra_accession)
+        tuple path(${files_to_clean}), 
     
     script: 
     def raw = "in1=${reads1} in2=${reads2}"
@@ -68,16 +77,23 @@ process runBBDuK{
         $contaminants_fa \\
         $args \\
         &> ${sra_accession}.bbduk.log && \\
-    original_file="\$(readlink -f ${reads1})"
-    echo "" > "\$original_file"
-    original_file_2="\$(readlink -f ${reads2})"
-    echo "" > "\$original_file_2"
+
+    original_file="\$(readlink -f ${reads1})"  && \\
+    tam=\$(stat --format=%s "\$original_file") && \\
+    truncate -s "\$tam" "\$original_file" && \\
+
+
+    original_file_2="\$(readlink -f ${reads2})"  && \\
+    tam=\$(stat --format=%s "\$original_file_2") && \\
+    truncate -s "\$tam" "\$original_file_2"
     """
 }  
 // /Storage/progs/bbmap_35.85/bbduk2.sh -Xmx40g threads=4 in1="SRR28642268_1.fastq.gz" in2="SRR28642268_2.fastq.gz" out1="SRR28642268.trimmed.R1.fastq.gz"  out2="SRR28642268.trimmed.R2.fastq.gz" ref="/Storage/progs/Trimmomatic-0.38/adapters/TruSeq3-SE.fa" minlength=60 qtrim=w trimq=20 showspeed=t k=27 overwrite=true > bbduk.log 2>&1
 
 // mapping with STAR - Genome Generate 
 process genomeGenerateSTAR{ 
+    publishDir "$projectDir/genomeGenerate"
+    cache 'lenient'
     // publishDir "$projectDir/STAR"  
     errorStrategy 'finish'
     input:
@@ -103,11 +119,13 @@ process genomeGenerateSTAR{
 
 // mapping with STAR - Mapping
 process mappingSTAR{   
+    publishDir "$projectDir/cleanup"
+    cache 'lenient'
     // publishDir "$projectDir/STAR_mapping"  
     errorStrategy 'ignore'
 
     input:
-        tuple path(reads1), path(reads2), val(sra_accession)
+        tuple path(reads1_bbk), path(reads2_bbk), val(sra_accession)
         path genome_index_dir
         val threads
         val species
@@ -119,7 +137,7 @@ process mappingSTAR{
     script: 
     def genDir = "${genome_index_dir}"
     def fileNamePrefix = "${species}/${sra_accession}/${species}_${sra_accession}_"
-    def reads = "${reads1} ${reads2}"
+    def reads = "${reads1_bbk} ${reads2_bbk}"
     """
     STAR --runThreadN ${threads} \
         --genomeDir $genDir  \
@@ -131,16 +149,20 @@ process mappingSTAR{
         --twopassMode Basic 
     
     samtools index ${species}/${sra_accession}/${species}_${sra_accession}_Aligned.sortedByCoord.out.bam && \\
-    original_file="\$(readlink -f ${reads1})"
-    echo "" > "\$original_file"
-    original_file_2="\$(readlink -f ${reads2})"
-    echo "" > "\$original_file_2"
+    original_file="\$(readlink -f ${reads1_bbk})"  && \\
+    tam=\$(stat --format=%s "\$original_file") && \\
+    truncate -s "\$tam" "\$original_file"  && \\
+
+    original_file_2="\$(readlink -f ${reads2_bbk})"  && \\
+    tam=\$(stat --format=%s "\$original_file_2") && \\
+    truncate -s "\$tam" "\$original_file_2"
     """
 }
 
 // splicing analysis - SGSeq
-process sgseq{   
-    publishDir "$projectDir/SGSeq", mode: "move"  
+process sgseq{  
+    cache 'lenient' 
+    publishDir "$projectDir/SGSeq"
     errorStrategy 'ignore'
 
     input:
@@ -166,6 +188,8 @@ process sgseq{
 
 // Setting file generator for majiq
 process majiq_setting{   
+    publishDir "$projectDir/cleanup"
+    cache 'lenient'
     // publishDir "$projectDir/MAJIQ", mode "move"    
     errorStrategy 'ignore'
     input:
@@ -198,18 +222,22 @@ process majiq_setting{
     ${majiq_path}/majiq build ${genomeGFF} --conf $settings_output_dic/majiq_settings_${species}_${sra_accession}.ini --output $build_output_directory
     ${majiq_path}/majiq psi $build_output_directory/*.majiq --name $sra_accession --output $psi_output_directory && \\
     
-    original_file="\$(readlink -f ${bam_index})"
-    echo "" > "\$original_file"
-    original_file_2="\$(readlink -f ${bam_file})"
-    echo "" > "\$original_file_2"
+    original_file="\$(readlink -f ${bam_index})" && \\
+    tam=\$(stat --format=%s "\$original_file") && \\
+    truncate -s "\$tam" "\$original_file"
+
+    original_file_2="\$(readlink -f ${bam_file})" && \\
+    tam=\$(stat --format=%s "\$original_file_2") && \\
+    truncate -s "\$tam" "\$original_file_2" 
     """
 }
 
 
 // splicing analysis - MAJIQ
 process MAJIQ{   
-    publishDir "$projectDir/MAJIQ", mode: "move"    
-    errorStrategy 'ignore'
+    cache 'lenient'
+    publishDir "$projectDir/MAJIQ"    
+    // errorStrategy 'ignore'
     input:
         val species
         path majiq_path 
@@ -227,7 +255,7 @@ process MAJIQ{
     script: 
     def voila_output_directory = "voila/${species}/${sra_accession}"
     """
-    ${majiq_path}/voila modulize ${build_splicegraph_sql} ${psi_voila} -d $voila_output_directory --keep-constitutive && \\
+    ${majiq_path}/voila modulize ${build_splicegraph_sql} ${psi_voila} -d $voila_output_directory --keep-constitutive
     """
 }
 
@@ -251,9 +279,10 @@ workflow {
     genome_gen = genomeGenerateSTAR(genomeFASTA, genomeGFF, threads, species)
 
     read_id = Channel.fromPath(params.reads_file).splitText().map { line -> line.trim() }.filter { line -> !line.isEmpty() }
-    genjson = getReadFTP(read_id) | downloadReadFTP 
+    genjson = getReadFTP(read_id)
+    (download, files_to_clean) = downloadReadFTP 
     
-    running_bbduk = runBBDuK(genjson, minlength, trimq, k, rref)
+    (running_bbduk, files_to_clean2) = runBBDuK(download, minlength, trimq, k, rref, files_to_clean)
 
     mapping = mappingSTAR(running_bbduk, genome_gen, threads, species)
 
