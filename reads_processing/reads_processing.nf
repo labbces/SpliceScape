@@ -5,6 +5,7 @@ process getReadFTP {
     publishDir "$projectDir/cleanup"
     cache 'lenient'
     errorStrategy 'ignore'
+    maxForks 3
     
     input:
     val sra_accession
@@ -76,14 +77,17 @@ process runBBDuK {
 
     original_file_1="\$(readlink -f ${json_file})" && \\
     tam=\$(stat --format=%s "\$original_file_1") && \\
+    echo "" > "\$original_file_1"  && \\
     truncate -s "\$tam" "\$original_file_1"  && \\
 
     original_file="\$(readlink -f ${reads1})"  && \\
     tam=\$(stat --format=%s "\$original_file") && \\
+    echo "" > "\$original_file"  && \\
     truncate -s "\$tam" "\$original_file" && \\
 
     original_file_2="\$(readlink -f ${reads2})"  && \\
     tam=\$(stat --format=%s "\$original_file_2") && \\
+    echo "" > "\$original_file_2"  && \\
     truncate -s "\$tam" "\$original_file_2"
     """
 }  
@@ -146,12 +150,15 @@ process mappingSTAR{
         --twopassMode Basic 
     
     samtools index ${species}/${sra_accession}/${species}_${sra_accession}_Aligned.sortedByCoord.out.bam && \\
+
     original_file="\$(readlink -f ${reads1_bbk})"  && \\
     tam=\$(stat --format=%s "\$original_file") && \\
+    echo "" > "\$original_file"  && \\
     truncate -s "\$tam" "\$original_file"  && \\
 
     original_file_2="\$(readlink -f ${reads2_bbk})"  && \\
     tam=\$(stat --format=%s "\$original_file_2") && \\
+    echo "" > "\$original_file_2"  && \\
     truncate -s "\$tam" "\$original_file_2"
     """
 }
@@ -220,10 +227,12 @@ process majiq_setting{
     
     original_file="\$(readlink -f ${bam_index})" && \\
     tam=\$(stat --format=%s "\$original_file") && \\
+    echo "" > "\$original_file"  && \\
     truncate -s "\$tam" "\$original_file"
 
     original_file_2="\$(readlink -f ${bam_file})" && \\
     tam=\$(stat --format=%s "\$original_file_2") && \\
+    echo "" > "\$original_file_2"  && \\
     truncate -s "\$tam" "\$original_file_2" 
     """
 }
