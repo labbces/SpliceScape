@@ -13,6 +13,8 @@ parser.add_argument('-f', '--filters', metavar='filter_column',
                     help='Filter to include rows where specified columns are not empty.', required=False)
 parser.add_argument('-s', '--strand', metavar='strand_info', choices=['PAIRED', 'SINGLE', 'NULL'], nargs='+',
                     help='Filter to include rows where strand_info is PAIRED, SINGLE, or NULL.', required=False)
+parser.add_argument('-e', '--exact_filter', metavar=('column', 'value'), nargs=2, action='append',
+                    help='Filter by exact column=value pairs (can be used multiple times)', required=False)
 parser.add_argument('--create_table', action='store_true',
                     help="Create filtered_sra_metadata table in the database.")
 parser.add_argument('--output_file', metavar='output.txt',
@@ -108,6 +110,32 @@ for filter_column in filters:
         select_query += f" AND {filter_column} IS NOT NULL AND {filter_column} != ''"
         insert_query += f" AND {filter_column} IS NOT NULL AND {filter_column} != ''"
         count_query += f" AND {filter_column} IS NOT NULL AND {filter_column} != ''"
+
+if args.exact_filter:
+    for column, value in args.exact_filter:
+
+        if column_exists(cursor, 'sra_metadata', column):
+            values = [v.strip() for v in value.split(',')]
+            if len(values) > 1: # if multiple values separated by comma
+                placeholders = ','.join(['?'] * len(values)) # for value in values, create ?
+                select_query += f" AND {column} IN ({placeholders})" # AND species_name IN (?,?)
+                insert_query += f" AND {column} IN ({placeholders})"
+                count_query += f" AND {column} IN ({placeholders})"
+                params.extend(values) # add all values to params
+            else:
+                select_query += f" AND {column} = ?"
+                insert_query += f" AND {column} = ?"
+                count_query += f" AND {column} = ?"
+                params.append(value)
+            if args.verbose:
+                print("Final SELECT Query:")
+                print(select_query)
+                print("Parameters:")
+                print(params)
+        else:
+            print(f"Column '{column}' does not exist in 'sra_metadata'.")
+            conn.close()
+            sys.exit()
 
 # Strand info filter
 first_condition = True
