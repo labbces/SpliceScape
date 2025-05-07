@@ -291,10 +291,10 @@ workflow {
 
     mapping = mappingSTAR(running_bbduk, genome_gen, threads, species)
 
-    (sgseq_run, status, mapping2) = sgseq(mapping, genomeGFF, cores, species, r_libs).view() 
+    (sgseq_run, status, mapping2) = sgseq(mapping, genomeGFF, cores, species, r_libs)
 
     majiq_setting = majiq_setting(mapping2 ,species, genome_path, status, majiq_path, genomeGFF)
-    majiq = MAJIQ(species, majiq_path, majiq_setting).view()
+    majiq = MAJIQ(species, majiq_path, majiq_setting)
 
     
 }
