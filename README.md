@@ -1,2 +1,2 @@
-# SplicingLandscapeGrasses
-Alternative Splicing Landscape in Grasses
+#  SpliceScape
+Alternative Splicing Landscape 
