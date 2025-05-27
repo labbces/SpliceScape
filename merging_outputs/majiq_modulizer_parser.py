@@ -130,7 +130,10 @@ def get_info(line, event_type_general):
     junction_name = line[12]
     junction_coord = line[13]
     if event_type_general != "constitutive":
-        mean_psi = line[18]
+        try:
+            mean_psi = line[18]
+        except:
+            mean_psi = 0
     else:
         try:
             mean_psi = line[19]
@@ -380,4 +383,4 @@ def majiq_parser(voila_path, db, srr):
     logging.info(f"Completed adding to database")
             
     
-# majiq_parser("/home/bia/LandscapeSplicingGrasses/SplicingLandscapeGrasses/merging_outputs/data", "", "srrTESTE123456")
+majiq_parser("/home/bia/LandscapeSplicingGrasses/SplicingLandscapeGrasses/merging_outputs/data", "", "srrTESTE123456")

@@ -18,7 +18,7 @@ def create_tables(db):
             CREATE TABLE IF NOT EXISTS splicing_events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             event_id TEXT UNIQUE,
-            search TEXT INDEX,
+            search TEXT,
             gene_name TEXT,
             gene_id TEXT,
             seqid TEXT,
@@ -34,6 +34,9 @@ def create_tables(db):
             mean_psi_sgseq REAL
         )
             ''')
+
+            # Create an index on the search column
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_search ON splicing_events(search)')
 
             # Create sample_info table with event_id as a foreign key
             cursor.execute('''
@@ -56,9 +59,9 @@ def create_tables(db):
         print(f"Error creating tables: {e}")
 
 
-db_path = "/home/bia/LandscapeSplicingGrasses/SplicingLandscapeGrasses/merging_outputs/test.db"
+db_path = "/home/bia/LandscapeSplicingGrasses/SplicingLandscapeGrasses/merging_outputs/test5srr.db"
 create_tables(db_path)
 
-voila_file = "/home/bia/LandscapeSplicingGrasses/SplicingLandscapeGrasses/merging_outputs/teste"
-srr = "srrTESTE123456"
-majiq_parser("/home/bia/LandscapeSplicingGrasses/SplicingLandscapeGrasses/merging_outputs/data", db_path, "srrTESTE123456")
+voila_file = "/home/bia/LandscapeSplicingGrasses/5test/SRR28872355"
+srr = "SRR28872355"
+majiq_parser(voila_file, db_path, srr)
