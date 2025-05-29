@@ -121,7 +121,7 @@ process genomeGenerateSTAR {
 
 // mapping with STAR - Mapping
 process mappingSTAR{   
-    publishDir "$projectDir/cleanup"
+    publishDir "$workDir/cleanup", mode: 'symlink'
     cache 'lenient'
     errorStrategy 'ignore'
 
@@ -166,7 +166,7 @@ process mappingSTAR{
 // splicing analysis - SGSeq
 process sgseq{  
     cache 'lenient' 
-    publishDir "$projectDir/SGSeq"
+    publishDir "$workDir/SGSeq", mode: 'symlink'
     errorStrategy 'ignore'
 
     input:
@@ -193,7 +193,8 @@ process sgseq{
 process majiq_setting{   
     publishDir "$projectDir/cleanup"
     cache 'lenient'
-    // publishDir "$projectDir/MAJIQ", mode "move"    
+    // publishDir "$projectDir/MAJIQ", mode "move" 
+    maxForks 1   
     errorStrategy 'ignore'
     input:
         tuple path(bam_dir), path(bam_index), path(bam_file), val(sra_accession)
@@ -241,7 +242,8 @@ process majiq_setting{
 // splicing analysis - MAJIQ
 process MAJIQ{   
     cache 'lenient'
-    publishDir "$projectDir/MAJIQ"    
+    publishDir "$workDir/MAJIQ", mode: 'symlink'  
+    maxForks 1   
     // errorStrategy 'ignore'
     input:
         val species
