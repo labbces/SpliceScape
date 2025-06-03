@@ -28,14 +28,14 @@ log.info """
      """
 
 // Importing processes from modules file
-include { GET_READ_FTP         } from './modules'
-include { DOWNLOAD_READ_FTP    } from './modules'
-include { RUN_BBDUK            } from './modules'
-include { GENOME_GENERATE_STAR } from './modules'
-include { MAPPING_STAR         } from './modules'
-include { SGSEQ                } from './modules'
-include { MAJIQ_SETTING        } from './modules'
-include { MAJIQ_RUN            } from './modules' 
+include { GET_READ_FTP         } from './modules.nf'
+include { DOWNLOAD_READ_FTP    } from './modules.nf'
+include { RUN_BBDUK            } from './modules.nf'
+include { GENOME_GENERATE_STAR } from './modules.nf'
+include { MAPPING_STAR         } from './modules.nf'
+include { SGSEQ                } from './modules.nf'
+include { MAJIQ_SETTING        } from './modules.nf'
+include { MAJIQ_RUN            } from './modules.nf' 
 
 
 workflow {
