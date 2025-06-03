@@ -65,8 +65,8 @@ process RUN_BBDUK {
     script:
     def raw = "in1=${reads1} in2=${reads2}"
     def trimmed = "out1=${sra_accession}.trimmed.R1.fastq.gz out2=${sra_accession}.trimmed.R2.fastq.gz"
-    def contaminants_fa = "rref=${rref}"
-    def args = "minlength=${minlength} qtrim=w trimq=${trimq} showspeed=t k=${k} overwrite=true"
+    def contaminants_fa = "rref=${rref_path}"
+    def args = "minlength=${minlength} qtrim=w trimq=${trimq} showspeed=t k=${k_val} overwrite=true"
     """
     ${bbduk_executable} \\
         -Xmx${max_mem} \\
