@@ -11,7 +11,7 @@ from Bio import Entrez
 import os
 # TODO: add module to allow export as a csv/tbl (with pandas ?)
 
-version = 0.01
+version = 0.02
 parser = argparse.ArgumentParser(description='Searches SRA Database for ID, \
     BIOPROJECT,BIOSAMPLE with specific requirements.', add_help=True)
 
@@ -19,7 +19,7 @@ parser = argparse.ArgumentParser(description='Searches SRA Database for ID, \
 required_args = parser.add_argument_group('Required Arguments')
 required_args.add_argument('--mode', dest='mode', help='"all" mode retrieve metadata  \
                     for all SRR entries related to a specified species (-sp). "srr" mode \
-                    Retrieves metadata for specific SRR IDs provided by the user (-see_file).', default='all', 
+                    Retrieves metadata for specific SRR IDs provided by the user (-srr_file).', default='all', 
                     choices=['all', 'srr'], required=True)
 required_args.add_argument('-e', '--email', dest='e_mail',
                     metavar='A.N.Other@example.com', type=str,
