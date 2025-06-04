@@ -107,7 +107,7 @@ workflow {
             params.species,
             params.majiq_path,
             MAJIQ_SETTING.out.majiq_input_tuple,
-            params.outdir 
+            params.outdir, 
             params.majiq_cores
         )        
 }
