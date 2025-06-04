@@ -263,6 +263,6 @@ process MAJIQ_RUN {
     script:
     def voila_out_dir = "voila/${species_name}/${sra_accession}"
     """
-    ${majiq_bin_path}/voila modulize ${splicegraph_sql_file} ${psi_voila_file}" -d ${voila_out_dir} --keep-constitutive --preserve-handles-hdf5 
+    ${majiq_bin_path}/voila modulize ${splicegraph_sql_file} ${psi_voila_file}" -d ${voila_out_dir} --keep-constitutive
     """
 }
