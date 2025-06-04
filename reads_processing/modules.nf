@@ -255,6 +255,7 @@ process MAJIQ_RUN {
           path(splicegraph_sql_file), \
           val(sra_accession)
     path outdir 
+    val majiq_cores
 
 
     output:
@@ -263,6 +264,6 @@ process MAJIQ_RUN {
     script:
     def voila_out_dir = "voila/${species_name}/${sra_accession}"
     """
-    ${majiq_bin_path}/voila modulize ${splicegraph_sql_file} ${psi_voila_file}" -d ${voila_out_dir} --keep-constitutive
+    ${majiq_bin_path}/voila modulize ${splicegraph_sql_file} ${psi_voila_file} -d ${voila_out_dir} --keep-constitutive --preserve-handles-hdf5 -j ${majiq_cores}
     """
 }
