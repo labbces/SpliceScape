@@ -64,7 +64,7 @@ process RUN_BBDUK {
 
     script:
     def raw = "in1=${reads1} in2=${reads2}"
-    def trimmed = "out1=${sra_accession}.trimmed.R1.fastq.gz out2=${sra_accession}.trimmed.R2.fastq.gz"
+    def trimmed_out = "out1=${sra_accession}.trimmed.R1.fastq.gz out2=${sra_accession}.trimmed.R2.fastq.gz"
     def contaminants_fa = "rref=${rref_path}"
     def args = "minlength=${minlength} qtrim=w trimq=${trimq} showspeed=t k=${k_val} overwrite=true"
     """
@@ -77,7 +77,7 @@ process RUN_BBDUK {
         $args \\
         &> "${sra_accession}.bbduk.log" \\
 
-    original_file_1="\$(readlink -f ${json_file})" && \\
+    original_file_1="\$(readlink -f ${json_file_to_clean})" && \\
     tam=\$(stat --format=%s "\$original_file_1") && \\
     echo "" > "\$original_file_1"  && \\
     truncate -s "\$tam" "\$original_file_1"  && \\
