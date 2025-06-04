@@ -228,12 +228,12 @@ process MAJIQ_SETTING {
     ${majiq_bin_path}/majiq build ${genomeGFF_file} --conf $settings_out_dir/majiq_settings_${species_name}_${sra_accession}.ini --output $build_out_dir
     ${majiq_bin_path}/majiq psi $build_out_dir/*.majiq --name $sra_accession --output $psi_out_dir
 
-    original_file="\$(readlink -f ${bam_index})" && \\
+    original_file="\$(readlink -f ${bam_index_file})" && \\
     tam=\$(stat --format=%s "\$original_file") && \\
     echo "" > "\$original_file"  && \\
     truncate -s "\$tam" "\$original_file"
 
-    original_file_2="\$(readlink -f ${bam_file})" && \\
+    original_file_2="\$(readlink -f ${bam_actual_file})" && \\
     tam=\$(stat --format=%s "\$original_file_2") && \\
     echo "" > "\$original_file_2"  && \\
     truncate -s "\$tam" "\$original_file_2" 
