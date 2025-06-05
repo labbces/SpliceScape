@@ -182,7 +182,7 @@ process SGSEQ {
     path outdir 
 
     output:
-    tuple path("${species_name}/SGSeq_${sra_accession}.csv"), path("${species_name}/SGSeq_coordinates_${sra_accession}.csv"), val(sra_accession), emit: sgseq_csv_sra
+    tuple path("SGSeq_results/${species_name}/SGSeq_${sra_accession}.csv"), path("SGSeq_results/${species_name}/SGSeq_coordinates_${sra_accession}.csv"), val(sra_accession), emit: sgseq_csv_sra
     val("SGSeq_concluded_${sra_accession}"), emit: status
     tuple path(bam_dir_path), path(bam_index_file), path(bam_actual_file), val(sra_accession), emit: bam_passthrough 
 
