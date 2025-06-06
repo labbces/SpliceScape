@@ -187,7 +187,7 @@ process SGSEQ {
     tuple path(bam_dir_path), path(bam_index_file), path(bam_actual_file), val(sra_accession), emit: bam_passthrough 
 
     script:
-    def outPrefix = "${species_name}"
+    def outPrefix = "SGSeq_results/${species_name}"
     """
     SGSeq.R --gff "${genomeGFF_file}" --cores ${num_cores} --path_to_bam "${bam_actual_file}" --sra_id "${sra_accession}" --out $outPrefix --libPaths "${r_libs_path}"
     """
