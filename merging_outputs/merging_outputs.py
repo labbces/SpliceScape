@@ -1,5 +1,12 @@
 import sqlite3
 from majiq_modulizer_parser import majiq_parser
+import argparse 
+
+parser = argparse.ArgumentParser(description="Create SQLite tables for splicing events and sample information.")
+parser.add_argument('--db', type=str, required=True, help='Path to the SQLite database file.')
+parser.add_argument('--voila', type=str, required=True, help='Path to the MAJIQ Voila output.')
+parser.add_argument('--srr_list', type=str, required=True, help='Sample SRR identifier.')
+args = parser.parse_args()
 
 
 def create_tables(db):
@@ -59,9 +66,15 @@ def create_tables(db):
         print(f"Error creating tables: {e}")
 
 
-db_path = "/home/bia/LandscapeSplicingGrasses/SplicingLandscapeGrasses/merging_outputs/test5srr.db"
+# db_path = "/home/bia/LandscapeSplicingGrasses/SplicingLandscapeGrasses/merging_outputs/test5srr.db"
+db_path = args.db
 create_tables(db_path)
 
-voila_file = "/home/bia/LandscapeSplicingGrasses/5test/SRR28872355"
-srr = "SRR28872355"
-majiq_parser(voila_file, db_path, srr)
+# voila_file = "/home/bia/LandscapeSplicingGrasses/5test/SRR28872355"
+# srr = "SRR28872355"
+srr_list = args.srr_list
+with open(srr_list, 'r') as file:
+    for srr in file:
+        srr = srr.strip()
+        voila_file = f"{args.voila}/{srr}"
+        majiq_parser(voila_file, db_path, srr)
