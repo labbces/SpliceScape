@@ -94,6 +94,52 @@ process RUN_BBDUK {
     """
 }  
 
+process WGET_DOWNLOADER {
+    tag "${sra_accession}"
+    publishDir "${params.outdir}/cleanup"
+    cache 'lenient'
+    errorStrategy 'retry'
+    maxRetries 2
+
+    input:
+    val sra_accession
+    val url
+    val user
+    val password
+
+    output:
+    tuple path("*_1.fastq.gz"), path("*_2.fastq.gz"), val(sra_accession), emit: reads_sra
+
+    script:
+    // As aspas simples em user/password ajudam a evitar problemas com caracteres especiais
+    def user_arg = "--user='${user}'"
+    def pass_arg = "--password='${password}'"
+    def accept_pattern = "-A '*${sra_accession}*.fastq.gz'"
+
+    """
+    wget -r -np ${accept_pattern} ${user_arg} ${pass_arg} "${url}"
+
+    # Check if wget command was successful
+    if [ \$? -ne 0 ]; then
+        echo "ERR: wget has failed for SRR ${sra_accession}." >&2
+        exit 1
+    fi
+
+    read1=\$(find . -name "*${sra_accession}*_1.fastq.gz" -type f)
+    read2=\$(find . -name "*${sra_accession}*_2.fastq.gz" -type f)
+
+    if [ \$(echo "\$read1" | wc -w) -eq 1 ] && [ \$(echo "\$read2" | wc -w) -eq 1 ] && [ -s "\$read1" ] && [ -s "\$read2" ]; then
+        echo "SUCESS: Files for ${sra_accession} downloaded and verified."
+        
+        mv "\$read1" .
+        mv "\$read2" .
+    else
+        echo "ERR: Fastq files for ${sra_accession} not found or empty." >&2
+        exit 1
+    fi
+    """
+}
+
 process ALTERNATIVE_RUN_BBDUK {
     tag "${sra_accession}"
     publishDir "${params.outdir}/cleanup"
@@ -128,6 +174,17 @@ process ALTERNATIVE_RUN_BBDUK {
         $contaminants_fa \\
         $args \\
         &> "${sra_accession}.bbduk.log"
+
+    original_file="\$(readlink -f ${reads1})"  && \\
+    tam=\$(stat --format=%s "\$original_file") && \\
+    echo "" > "\$original_file"  && \\
+    truncate -s "\$tam" "\$original_file" && \\
+
+    original_file_2="\$(readlink -f ${reads2})"  && \\
+    tam=\$(stat --format=%s "\$original_file_2") && \\
+    echo "" > "\$original_file_2"  && \\
+    truncate -s "\$tam" "\$original_file_2"
+
         """
 }
 

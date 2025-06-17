@@ -30,6 +30,7 @@ log.info """
 // Importing processes from modules file
 include { GET_READ_FTP         } from './modules.nf'
 include { DOWNLOAD_READ_FTP    } from './modules.nf'
+include { WGET_DOWNLOADER      } from './modules.nf'
 include { RUN_BBDUK            } from './modules.nf'
 include { ALTERNATIVE_RUN_BBDUK} from './modules.nf'
 include { GENOME_GENERATE_STAR } from './modules.nf'
@@ -74,15 +75,15 @@ workflow {
         //   params.outdir    // Para publishDir
         //)
 
-        fastq_ch = read_id_ch.map { srr_id ->
-            def read1_path = file("${params.fastq_dir}/${srr_id}_1.fastq.gz")
-            def read2_path = file("${params.fastq_dir}/${srr_id}_2.fastq.gz")
-            
-            return tuple(read1_path, read2_path, srr_id)
-        }
+        WGET_DOWNLOADER (
+            read_id_ch,
+            params.url,
+            params.user,
+            params.password
+        )
 
         ALTERNATIVE_RUN_BBDUK (
-            fastq_ch,
+             WGET_DOWNLOADER.out.reads_sra,
             params.minlength,
             params.trimq,
             params.k,
