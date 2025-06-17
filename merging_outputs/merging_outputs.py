@@ -78,3 +78,4 @@ with open(srr_list, 'r') as file:
         srr = srr.strip()
         voila_file = f"{args.voila}/{srr}"
         majiq_parser(voila_file, db_path, srr)
+        print(f"Processing {srr} completed")
