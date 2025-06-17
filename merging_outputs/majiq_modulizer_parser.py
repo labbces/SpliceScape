@@ -383,4 +383,4 @@ def majiq_parser(voila_path, db, srr):
     logging.info(f"Completed adding to database")
             
     
-majiq_parser("/home/bia/LandscapeSplicingGrasses/SplicingLandscapeGrasses/merging_outputs/data", "", "srrTESTE123456")
+# majiq_parser("/home/bia/LandscapeSplicingGrasses/SplicingLandscapeGrasses/merging_outputs/data", "", "srrTESTE123456")
