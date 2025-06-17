@@ -31,6 +31,7 @@ log.info """
 include { GET_READ_FTP         } from './modules.nf'
 include { DOWNLOAD_READ_FTP    } from './modules.nf'
 include { RUN_BBDUK            } from './modules.nf'
+include { ALTERNATIVE_RUN_BBDUK} from './modules.nf'
 include { GENOME_GENERATE_STAR } from './modules.nf'
 include { MAPPING_STAR         } from './modules.nf'
 include { SGSEQ                } from './modules.nf'
@@ -51,24 +52,41 @@ workflow {
         genome_index_ch = GENOME_GENERATE_STAR.out.genome_index_dir
         
         // Channel with read IDs
-        read_id_ch = Channel.fromPath(params.reads_file)
-                            .splitText()
-                            .map { line -> line.trim() }
-                            .filter { line -> !line.isEmpty() }
+        read_id_ch = Channel.fromPath(params.reads_file).splitText()
+                                                        .map { line -> line.trim() }
+                                                        .filter { line -> !line.isEmpty() }
         
         // Downloading reads from FTP
-        GET_READ_FTP ( read_id_ch, params.outdir )
+        // GET_READ_FTP ( read_id_ch, params.outdir )
 
-        DOWNLOAD_READ_FTP ( GET_READ_FTP.out.ftp_json_sra, params.outdir )
+        // DOWNLOAD_READ_FTP ( GET_READ_FTP.out.ftp_json_sra, params.outdir )
 
         // Cleaning up the reads
-        RUN_BBDUK (
-            DOWNLOAD_READ_FTP.out.reads_sra,
+        //RUN_BBDUK (
+        //    DOWNLOAD_READ_FTP.out.reads_sra,
+        //    params.minlength,
+        //    params.trimq,
+        //    params.k,
+        //    params.rref,
+        //    DOWNLOAD_READ_FTP.out.json_file_passthrough,
+        //    params.bbduk,    // Passando o caminho do bbduk
+        //    params.maxmem,   // Passando maxmem
+        //   params.outdir    // Para publishDir
+        //)
+
+        fastq_ch = read_id_ch.map { srr_id ->
+            def read1_path = file("${params.fastq_dir}/${srr_id}_1.fastq.gz")
+            def read2_path = file("${params.fastq_dir}/${srr_id}_2.fastq.gz")
+            
+            return tuple(read1_path, read2_path, srr_id)
+        }
+
+        ALTERNATIVE_RUN_BBDUK (
+            fastq_ch,
             params.minlength,
             params.trimq,
             params.k,
             params.rref,
-            DOWNLOAD_READ_FTP.out.json_file_passthrough,
             params.bbduk,    // Passando o caminho do bbduk
             params.maxmem,   // Passando maxmem
             params.outdir    // Para publishDir
@@ -76,7 +94,7 @@ workflow {
     
         // Mapping reads to genome
         MAPPING_STAR (
-            RUN_BBDUK.out.trimmed_reads_sra,
+            ALTERNATIVE_RUN_BBDUK.out.trimmed_reads_sra,
             genome_index_ch,
             params.threads,
             params.species,

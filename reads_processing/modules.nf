@@ -94,6 +94,43 @@ process RUN_BBDUK {
     """
 }  
 
+process ALTERNATIVE_RUN_BBDUK {
+    tag "${sra_accession}"
+    publishDir "${params.outdir}/cleanup"
+    cache 'lenient'
+    errorStrategy 'retry'
+    maxRetries 3
+
+    input:
+    tuple path(reads1), path(reads2), val(sra_accession)
+    val minlength
+    val trimq
+    val k_val 
+    path rref_path 
+    val bbduk_executable 
+    val max_mem          
+    path outdir    
+
+    output:
+    tuple path("${sra_accession}.trimmed.R1.fastq.gz"), path("${sra_accession}.trimmed.R2.fastq.gz"), val(sra_accession), emit: trimmed_reads_sra
+
+    script:
+    def raw = "in1=${reads1} in2=${reads2}"
+    def trimmed_out = "out1=${sra_accession}.trimmed.R1.fastq.gz out2=${sra_accession}.trimmed.R2.fastq.gz"
+    def contaminants_fa = "rref=${rref_path}"
+    def args = "minlength=${minlength} qtrim=w trimq=${trimq} showspeed=t k=${k_val} overwrite=true"
+    """
+    ${bbduk_executable} \\
+        -Xmx${max_mem} \\
+        $raw \\
+        $trimmed_out \\
+        threads=$task.cpus \\
+        $contaminants_fa \\
+        $args \\
+        &> "${sra_accession}.bbduk.log"
+        """
+}
+
 process GENOME_GENERATE_STAR {
     tag "${species}"
     publishDir "${params.outdir}/genomeGenerate"
