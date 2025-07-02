@@ -212,7 +212,7 @@ def file_processing(file, srr, event_type_general, dictionary):
     Processes a given file to extract and organize splicing event information.
     Args:
         file (str): Path to the input file containing splicing event data.
-        srr (str): Sample Run Repository identifier.
+        sra_id (str): Sample Run Repository identifier.
         event_type_general (str): General type of splicing event.
         dictionary (dict): Dictionary to store processed splicing event data.
     Returns:
@@ -270,7 +270,7 @@ def file_processing(file, srr, event_type_general, dictionary):
 
     return dictionary
 
-def add_to_database(db, processed_data):
+def add_to_database(db, processed_data, species):
     """
     Adds processed splicing event data to the specified SQLite database.
 
@@ -299,24 +299,24 @@ def add_to_database(db, processed_data):
         INSERT INTO splicing_events 
             (event_id, search, gene_name, gene_id, seqid, strand, event_type, 
             start, end, coord, full_coord, upstream_exon_coord, downstream_exon_coord, 
-            mean_psi_majiq, mean_psi_sgseq)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            mean_psi_majiq, mean_psi_sgseq, species)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(event_id) DO UPDATE SET
             mean_psi_majiq = (mean_psi_majiq + excluded.mean_psi_majiq) / 2
         ''', (event_id, search, gene_name, gene_id, seqid, strand, event_type,
               junction_coord_start, junction_coord_end, coord, full_coord,
-              upstream_exon_coord, downstream_exon_coord, mean_psi, 0))
+              upstream_exon_coord, downstream_exon_coord, mean_psi, 0, species))
 
         cursor.execute('''
-        INSERT OR IGNORE INTO sample_info (event_id, de_novo, mean_psi_majiq, psi_sgseq, srr, majiq, sgseq)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (event_id, denovo, mean_psi, 0, srr, majiq, sgseq))
+        INSERT OR IGNORE INTO sample_info (event_id, de_novo, mean_psi_majiq, psi_sgseq, sra_id, majiq, sgseq, species)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (event_id, denovo, mean_psi, 0, srr, majiq, sgseq, species))
 
     conn.commit()
     conn.close()
 
 
-def majiq_parser(voila_path, db, srr):
+def majiq_parser(voila_path, db, srr, species):
     """
     Parses MAJIQ output files from a specified directory and processes them based on their type.
     Args:
@@ -379,7 +379,7 @@ def majiq_parser(voila_path, db, srr):
             file_processing(file, srr, "constitutive", data)
             logging.info(f"Completed {file.name} processing")
     
-    add_to_database(db, data)
+    add_to_database(db, data, species)
     logging.info(f"Completed adding to database")
             
     
