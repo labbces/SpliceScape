@@ -291,6 +291,7 @@ process MAJIQ_SETTING {
     tag "${sra_accession} on ${species_name}"
     publishDir "${params.outdir}/cleanup"
     cache 'lenient'
+    errorStrategy 'ignore'
 
     input:
     tuple path(bam_dir_path), path(bam_index_file), path(bam_actual_file), val(sra_accession)
@@ -338,6 +339,7 @@ process MAJIQ_RUN {
     tag "${sra_accession} on ${species_name}"
     publishDir "${params.outdir}/MAJIQ_results", mode: 'symlink'
     cache 'lenient'
+    errorStrategy 'ignore'
 
     input:
     val species_name
