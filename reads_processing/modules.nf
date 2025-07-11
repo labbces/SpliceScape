@@ -185,7 +185,7 @@ process ALTERNATIVE_RUN_BBDUK {
     echo "" > "\$original_file_2"  && \\
     truncate -s "\$tam" "\$original_file_2"
 
-        """
+    """
 }
 
 process GENOME_GENERATE_STAR {
@@ -238,16 +238,22 @@ process MAPPING_STAR {
     def reads_input = "${reads1_bbk} ${reads2_bbk}"
     """
     # mkdir -p "${outPrefixDir}"
+    unsortedBAM="${fileNamePrefix}Aligned.out.bam"
+    sortedBAM="${fileNamePrefix}Aligned.sortedByCoord.out.bam"
+
     STAR --runThreadN ${num_threads} \\
         --genomeDir $genome_idx_dir \\
         --outFileNamePrefix $fileNamePrefix \\
-        --outSAMtype BAM SortedByCoordinate \\
+        --outSAMtype BAM Unsorted \\
         --readFilesIn ${reads_input} \\
         --readFilesCommand zcat \\
         --outSAMstrandField intronMotif \\
         --twopassMode Basic
 
-    samtools index "${fileNamePrefix}Aligned.sortedByCoord.out.bam" \\
+    samtools sort -@ ${num_threads} -o $sortedBAM $unsortedBAM
+    samtools index $sortedBAM \\
+
+    rm $unsortedBAM \\
 
     original_file="\$(readlink -f ${reads1_bbk})"  && \\
     tam=\$(stat --format=%s "\$original_file") && \\
