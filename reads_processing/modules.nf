@@ -236,10 +236,10 @@ process MAPPING_STAR {
     def outPrefixDir = "${species_name}/${sra_accession}"
     def fileNamePrefix = "${outPrefixDir}/${species_name}_${sra_accession}_"
     def reads_input = "${reads1_bbk} ${reads2_bbk}"
+    def unsortedBAM = "${fileNamePrefix}Aligned.out.bam"
+    def sortedBAM = "${fileNamePrefix}Aligned.sortedByCoord.out.bam"
     """
     # mkdir -p "${outPrefixDir}"
-    unsortedBAM="${fileNamePrefix}Aligned.out.bam"
-    sortedBAM="${fileNamePrefix}Aligned.sortedByCoord.out.bam"
 
     STAR --runThreadN ${num_threads} \\
         --genomeDir $genome_idx_dir \\
