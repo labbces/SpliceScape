@@ -21,8 +21,35 @@ This approach allows SpliceScape to handle large public datasets, making it a po
 
 # Quick Start
 ### Dependencies 
-⚠️ To run SpliceScape, you will need the following main dependencies installed:
-⚠️⚠️⚠️⚠️
+To run SpliceScape, you will need the following main dependencies installed:
+
+**Core Software & Tools**
+
+* Nextflow (v24.10.5 or later) 
+* STAR 
+* BBMap (provides BBDuK v35.85) 
+* Samtools 
+* MAJIQ 
+* ffq (from pip) 
+* wget & md5sum (Standard Linux/macOS utilities)
+
+**Programming Environments**
+
+* Python (v3.7 or higher)
+* R (v4.4)
+
+**Required Python Libraries**
+
+* requests (v2.28.1)
+* beautifulsoup4 (v0.0.1)
+* biopython (v1.79)
+* pandas (v1.4.0)
+
+**Required R Libraries**
+
+* optparse (v1.7.5)
+* SGSeq (v1.38.0)
+* GenomicFeatures (v1.56.0)
 
 ### Input Files
 
@@ -32,7 +59,7 @@ SpliceScape requires three main inputs to start an analysis:
 * **Genome Annotation:** An uncompressed genome annotation file in `.gff3` format, also from Phytozome.
 * **Sample List:** A plain text (`.txt`) file containing the SRA accessions for your target samples, with one identifier per line.
 
-⚠️⚠️⚠️⚠️ For detailed instructions on how to obtain and format these files, please refer to the **[SpliceScape Wiki](https://github.com/labbces/SpliceScape/wiki)**.
+For detailed instructions on how to obtain and format these files, please refer to the **[SpliceScape Wiki](https://github.com/labbces/SpliceScape/wiki)**.
 
 ## Running
 
