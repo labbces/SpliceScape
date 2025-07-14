@@ -77,7 +77,7 @@ workflow {
     
         // Mapping reads to genome
         MAPPING_STAR (
-            ALTERNATIVE_RUN_BBDUK.out.trimmed_reads_sra,
+            RUN_BBDUK.out.trimmed_reads_sra,
             genome_index_ch,
             params.threads,
             params.species,
