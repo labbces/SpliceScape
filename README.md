@@ -106,7 +106,6 @@ The pipeline is primarily configured using the [splicescape_paired.config file](
 |                  | maxForks          | Limits execution to maximum concurrent processes of each type.              | `5` |
 |                  | withName          | Overrides default settings for specific processes (resource allocation).    | `"DOWNLOAD_READ_FTP { clusterOptions = '-S /bin/bash -pe smp 2 -l h_vmem=2G -V', maxForks = 10 }"` |
 
-
 ### 3. **Run SpliceScape:**
    
 Execute the pipeline using the nextflow run command. If you are using a cluster with a scheduler like SGE, you can use a profile.
@@ -115,8 +114,33 @@ Execute the pipeline using the nextflow run command. If you are using a cluster 
 nextflow run splicescape_paired.nf -c splicescape_paired.config -profile sge -resume
 ```
 
-Please find this files at [reads_processing](https://github.com/labbces/SpliceScape/tree/main/reads_processing).
+Please find this files in [reads_processing](https://github.com/labbces/SpliceScape/tree/main/reads_processing).
+
+### ☁️ Alternative Download from a Private Cloud
+
+In cases where direct downloads from the NCBI SRA are not feasible or have failed, SpliceScape provides an alternative workflow to download reads from a private, password-protected server where the data has been pre-staged.
+
+To use this method, you must:
+
+1. Run the `splicescape_paired_cloud.nf` pipeline script instead of the default one.
+2. Fill the following parameters for your private server to your `.config` file:
+
+| Parameter       | Description                                        |
+|:---------------:|:--------------------------------------------------:|
+| params.url      | The base URL of the directory on the cloud server. |
+| params.user     | The username required for authentication.          |
+| params.password | The password required for authentication.          |
+
+
+Your run command will then specify the alternative workflow script:
+
+```
+nextflow run splicescape_paired_cloud.nf -c your_config_file.config -profile sge -resume
+```
+
+This will use the `WGET_DOWNLOADER` process to securely download the files before proceeding with the standard cleaning and analysis steps.
 
 # Full Documentation
 For a detailed explanation of each step, advanced configuration, and tutorials, please visit our [SpliceScape Wiki](https://github.com/labbces/SpliceScape/wiki).
+
 
