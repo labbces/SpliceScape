@@ -58,21 +58,39 @@ workflow {
                                                         .filter { line -> !line.isEmpty() }
         
         // Downloading reads from FTP
-        GET_READ_FTP ( read_id_ch, params.outdir )
+        // GET_READ_FTP ( read_id_ch, params.outdir )
 
-        DOWNLOAD_READ_FTP ( GET_READ_FTP.out.ftp_json_sra, params.outdir )
+        // DOWNLOAD_READ_FTP ( GET_READ_FTP.out.ftp_json_sra, params.outdir )
 
         // Cleaning up the reads
-        RUN_BBDUK (
-            DOWNLOAD_READ_FTP.out.reads_sra,
+        //RUN_BBDUK (
+        //    DOWNLOAD_READ_FTP.out.reads_sra,
+        //    params.minlength,
+        //    params.trimq,
+        //    params.k,
+        //    params.rref,
+        //    DOWNLOAD_READ_FTP.out.json_file_passthrough,
+        //    params.bbduk,    // Passando o caminho do bbduk
+        //    params.maxmem,   // Passando maxmem
+        //   params.outdir    // Para publishDir
+        //)
+
+        WGET_DOWNLOADER (
+            read_id_ch,
+            params.url,
+            params.user,
+            params.password
+        )
+
+        ALTERNATIVE_RUN_BBDUK (
+             WGET_DOWNLOADER.out.reads_sra,
             params.minlength,
             params.trimq,
             params.k,
             params.rref,
-            DOWNLOAD_READ_FTP.out.json_file_passthrough,
             params.bbduk,    // Passando o caminho do bbduk
             params.maxmem,   // Passando maxmem
-           params.outdir    // Para publishDir
+            params.outdir    // Para publishDir
         )
     
         // Mapping reads to genome
