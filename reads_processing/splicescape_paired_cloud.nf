@@ -130,3 +130,4 @@ workflow {
             params.majiq_cores
         )        
 }
+// 

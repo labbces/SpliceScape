@@ -39,7 +39,7 @@ include { SGSEQ                } from './modules.nf'
 include { MAJIQ_SETTING        } from './modules.nf'
 include { MAJIQ_RUN            } from './modules.nf' 
 
-
+// 
 workflow {
     main: 
         // Generating genome index - single execution         
