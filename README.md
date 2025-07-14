@@ -70,7 +70,37 @@ git clone https://github.com/labbces/SpliceScape.git
 cd SpliceScape
 ```
 
-### 2. **Configure the pipeline:**
+### 2. **Prepare input files:**
+
+SpliceScape is designed to work with the standard file formats and structures provided by the [Phytozome](https://phytozome-next.jgi.doe.gov/) database. For the pipeline to locate the genome and annotation files correctly, you must follow a specific directory structure.
+
+The three main files required for each species are:
+
+* A reference genome in FASTA format (.fa). - From Phytozome
+* A genome annotation file in GFF3 format (.gff3). - From Phytozome
+* A plain text file (.txt) listing the target SRA accessions, with one per line. 
+
+A critical requirement is that both genome files must be uncompressed before running the pipeline. SpliceScape does not handle gzipped files (e.g., .fa.gz) for the genome and annotation inputs.
+
+**Recommended Directory Structure**
+
+We recommend creating a main directory for your project's input data and then creating a subdirectory for each species downloaded from Phytozome. Inside each species directory, you should have two subdirectories: assembly and annotation.
+
+```
+/path/to/your/project/
+└── data/
+    └── Phytozome/
+        └── Athaliana_447_Araport11/      <-- Main species directory
+            ├── assembly/
+            │   └── Athaliana_447_TAIR10.fa   <-- Place the uncompressed FASTA file here
+            └── annotation/
+                └── Athaliana_447_Araport11.gene_exons.gff3  <-- Place the uncompressed GFF3 file here
+```
+
+* For more details, please see our [0.3 Input Files: Preparing Genome and Transcriptome Data](https://github.com/labbces/SpliceScape/wiki/0.3-Input-Files:-Preparing-Genome-and-Transcriptome-Data) page
+
+
+### 3. **Configure the pipeline:**
    
 The pipeline is primarily configured using the [splicescape_paired.config file](https://github.com/labbces/SpliceScape/blob/main/reads_processing/splicescape_paired.config).  You must edit this file to provide the paths to your input files and executables. Below are the most critical parameters to set:
 
@@ -106,7 +136,7 @@ The pipeline is primarily configured using the [splicescape_paired.config file](
 |                  | maxForks          | Limits execution to maximum concurrent processes of each type.              | `5` |
 |                  | withName          | Overrides default settings for specific processes (resource allocation).    | `"DOWNLOAD_READ_FTP { clusterOptions = '-S /bin/bash -pe smp 2 -l h_vmem=2G -V', maxForks = 10 }"` |
 
-### 3. **Run SpliceScape:**
+### 4. **Run SpliceScape:**
    
 Execute the pipeline using the nextflow run command. If you are using a cluster with a scheduler like SGE, you can use a profile.
 
