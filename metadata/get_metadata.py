@@ -41,6 +41,7 @@ required_args_srr_mode = parser.add_argument_group('Required Arguments if mode i
 required_args_srr_mode.add_argument('--srr_file', dest='srr_file',
                     type=str, help='Path to a file containing the desired SRR IDs, with one SRR per line')
 
+
 # optional arguments
 optional_args = parser.add_argument_group('Optional Arguments')
 optional_args.add_argument('-v', '--version', action='version', version=version)
