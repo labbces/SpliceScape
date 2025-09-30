@@ -1,0 +1,32 @@
+name: SpliceScape
+channels:
+  - bioconda
+  - conda-forge
+  - defaults
+dependencies:
+  - seaborn
+  - samtools
+  - r-runit
+  - biopython
+  - beautifulsoup4
+  - bioconductor-genomicfeatures
+  - pandas
+  - bioconductor-annotationdbi
+  - pip
+  - bbmap
+  - r-biocmanager
+  - requests
+  - openjdk
+  - bioconductor-genomicranges
+  - r-getopt
+  - bioconductor-sgseq
+  - bioconductor-genomicalignments
+  - star
+  - jupyterlab
+  - r-optparse
+  - matplotlib
+  - wget
+  - bioconductor-genomeinfodb
+  - scikit-learn
+  - numpy
+prefix: SpliceScape
