@@ -21,7 +21,7 @@ This approach allows SpliceScape to handle large public datasets, making it a po
 
 # Quick Start
 ### Dependencies 
-To run SpliceScape, you will need the following main dependencies installed:
+SpliceScape has several dependencies, below we list some of the main dependencies that must be installed prior to using the pipeline. We recommend to use the [conda environment](envs/environment.yml) to install all dependencies.
 
 **Core Software & Tools**
 
