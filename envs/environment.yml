@@ -1,8 +1,8 @@
 name: /Storage/progs/SpliceScape_env_p312
 channels:
   - bioconda
-  - defaults
   - conda-forge
+  - defaults
 dependencies:
   - _libgcc_mutex=0.1=conda_forge
   - _openmp_mutex=4.5=2_gnu
@@ -45,12 +45,15 @@ dependencies:
   - bwidget=1.9.16=h9eba36c_0
   - bzip2=1.0.8=hda65f42_8
   - c-ares=1.34.5=hb9d3cd8_0
-  - ca-certificates=2025.10.5=hbd8a1cb_0
+  - ca-certificates=2025.11.4=h06a4308_0
   - cairo=1.18.4=h44eff21_0
-  - certifi=2025.10.5=pyhd8ed1ab_0
+  - certifi=2025.11.12=py312h06a4308_0
   - cffi=2.0.0=py312h35888ee_0
   - charset-normalizer=3.4.3=pyhd8ed1ab_0
+  - coreutils=9.8=hee96239_0
   - curl=8.14.1=h332b0f4_0
+  - dbus=1.16.2=h5bd4931_0
+  - expat=2.7.1=h6a678d5_0
   - font-ttf-dejavu-sans-mono=2.37=hd3eb1b0_0
   - font-ttf-inconsolata=2.001=hcb22688_0
   - font-ttf-source-code-pro=2.030=hd3eb1b0_0
@@ -63,6 +66,8 @@ dependencies:
   - gcc_impl_linux-64=11.2.0=h1234567_1
   - gfortran_impl_linux-64=11.2.0=h7a446d4_16
   - giflib=5.2.2=hd590300_0
+  - glib=2.86.0=he175458_0
+  - glib-tools=2.86.0=hf516916_0
   - glpk=5.0=h445213a_0
   - gmp=6.3.0=hac33072_2
   - graphite2=1.3.14=h295c915_1
@@ -123,9 +128,11 @@ dependencies:
   - libzlib=1.3.1=hb9d3cd8_2
   - make=4.2.1=h1bed415_1
   - ncurses=6.5=h2d0b736_3
+  - nextflow=25.04.8=h2a3209d_0
   - oniguruma=6.9.10=hb9d3cd8_0
-  - openjdk=24.0.2=h5755bd7_0
+  - openjdk=21.0.6=h38aa4c6_0
   - openssl=3.5.4=h26f9b46_0
+  - packaging=25.0=py312h06a4308_0
   - pango=1.56.4=hadf4263_0
   - pcre2=10.46=hf426167_0
   - pip=25.2=pyh8b19718_0
@@ -154,6 +161,7 @@ dependencies:
   - r-formatr=1.14=r44hc72bb7e_3
   - r-futile.logger=1.4.3=r44hc72bb7e_1007
   - r-futile.options=1.0.1=r44hc72bb7e_1006
+  - r-getopt=1.20.4=r44ha770c72_2
   - r-glue=1.8.0=r44h54b55ab_1
   - r-httr=1.4.7=r44hc72bb7e_2
   - r-igraph=2.0.3=r44h510f1ce_1
@@ -167,6 +175,7 @@ dependencies:
   - r-memoise=2.0.1=r44hc72bb7e_4
   - r-mime=0.13=r44h54b55ab_1
   - r-openssl=2.3.4=r44h50f7d53_0
+  - r-optparse=1.7.5=r44hc72bb7e_2
   - r-pkgconfig=2.0.3=r44hc72bb7e_5
   - r-plogr=0.2.0=r44hc72bb7e_1007
   - r-png=0.1_8=r44h6b2d295_3
@@ -255,7 +264,6 @@ dependencies:
       - networkx==3.3
       - numcodecs==0.13.1
       - numpy==2.0.1
-      - packaging==25.0
       - pandas==2.2.2
       - partd==1.4.2
       - pillow==11.3.0
