@@ -41,7 +41,7 @@ dependencies:
   - requests
   - beautifulsoup4
   - bioconda::star
-  - bioconda::nextflow
+  - bioconda::nextflow=25.04.8
   - r-optparse
   - bioconda::bioconductor-txdbmaker
   - numpy==2.2.6
