@@ -1,124 +1,111 @@
 #!/usr/bin/env python3
 # majiq_modulizer_parser.py
-import csv
-import pandas
 import logging
 import sqlite3
 from pathlib import Path
-import pandas as pd
+import re
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
     handlers=[
-        logging.FileHandler("majiq_parser.log")  # Log to a file
+        logging.FileHandler("majiq_parser.log")
     ]
 )
 
-import re
 def extract_start_end(coord):
     """
-    Extracts the start and end coordinates from a given string.
-    The input string should be in the format "start-end", where start and end 
-    are either integers or the string "na". If "na" is encountered, it is 
-    converted to -1.
-    Args:
-        coord (str): A string containing the coordinates in the format "start-end".
-    Returns:
-        tuple: A tuple containing two integers, the start and end coordinates.
+    Extracts start/end. Converts 'na' to -1.
     """
     match = re.match(r"(-?[a-zA-Z0-9]+)-(-?[a-zA-Z0-9]+)", coord)
     if match:
         start = match.group(1)
         end = match.group(2)
 
-        if start == "na":
-            start = -1
-        else:
-            start = int(start)
-        if end == "na":
-            end = -1
-        else:
-            end = int(end)
+        start = -1 if start == "na" else int(start)
+        end = -1 if end == "na" else int(end)
         
         return start, end
- 
+    return -1, -1
 
 def determine_upstream_downstream(reference_exon_coord, spliced_with_coord):
-        """
-        Determines the upstream and downstream exon coordinates based on the given reference exon 
-        and spliced exon coordinates. It compares the start positions of the exons to determine 
-        which one is upstream and which one is downstream.
-        Args:
-            reference_exon_coord (tuple): A tuple containing the start and end coordinates of the reference exon.
-            spliced_with_coord (tuple): A tuple containing the start and end coordinates of the spliced exon.
-        Returns:
-            tuple: A tuple containing:
-                - upstream (tuple): The coordinates of the upstream exon.
-                - downstream (tuple): The coordinates of the downstream exon.
-                - upstream_start (int): The start coordinate of the upstream exon.
-                - upstream_end (int): The end coordinate of the upstream exon.
-                - downstream_start (int): The start coordinate of the downstream exon.
-                - downstream_end (int): The end coordinate of the downstream exon.
-        """
-        ref_start, ref_end = extract_start_end(reference_exon_coord)
-        spliced_start, spliced_end = extract_start_end(spliced_with_coord)
+    """
+    Determina upstream/downstream.
+    Para coordenadas 'na', cria um exon âncora de 3bp separado por um intron mínimo de 1bp.
+    """
+    ref_start, ref_end = extract_start_end(reference_exon_coord)
+    spliced_start, spliced_end = extract_start_end(spliced_with_coord)
 
-        # Compara os valores de start para determinar upstream e downstream
+    # Lógica de ordenação (quem vem antes)
+    if ref_start != -1 and spliced_start != -1:
         if ref_start < spliced_start:
             upstream = reference_exon_coord
             downstream = spliced_with_coord
         else:
             upstream = spliced_with_coord
             downstream = reference_exon_coord
-        
-        upstream_start, upstream_end = extract_start_end(upstream)
-        downstream_start, downstream_end = extract_start_end(downstream)
+    else:
+        # Fallback para End
+        if ref_end != -1 and spliced_end != -1:
+            if ref_end < spliced_end:
+                upstream = reference_exon_coord
+                downstream = spliced_with_coord
+            else:
+                upstream = spliced_with_coord
+                downstream = reference_exon_coord
+        else:
+            upstream = reference_exon_coord
+            downstream = spliced_with_coord
+    
+    upstream_start, upstream_end = extract_start_end(upstream)
+    downstream_start, downstream_end = extract_start_end(downstream)
 
-        if upstream_start == -1:
-            upstream_start = upstream_end - 100
-        if downstream_start == -1:
-            downstream_start = downstream -100
+    # --- CORREÇÃO DE COORDENADAS FALTANTES ---
+    
+    # Exon Artificial: 3bp (para ser > 0 e visível como entidade)
+    ARTIFICIAL_EXON_LEN = 3  
+    
+    # Intron Artificial: 1bp (O mínimo matemático para separar dois objetos)
+    MIN_INTRON_GAP = 1         
 
-        if upstream_end == -1:
-            upstream_end = upstream_start + 100
-        if downstream_end == -1:
-            downstream_end = downstream_start + 100
+    # Passo A: Resolver Upstream
+    if upstream_end == -1:
+        if upstream_start != -1:
+            upstream_end = upstream_start + ARTIFICIAL_EXON_LEN
+        elif downstream_start != -1:
+            # Termina 1bp antes do começo do próximo
+            upstream_end = downstream_start - MIN_INTRON_GAP
+        else:
+            upstream_end = 100 # Valor arbitrário de segurança
 
-        
-        return upstream, downstream, upstream_start, upstream_end, downstream_start, downstream_end
+    if upstream_start == -1:
+        upstream_start = upstream_end - ARTIFICIAL_EXON_LEN
+
+    # Passo B: Resolver Downstream
+    if downstream_start == -1:
+        # Começa 1bp depois do fim do anterior
+        downstream_start = upstream_end + MIN_INTRON_GAP
+
+    if downstream_end == -1:
+        downstream_end = downstream_start + ARTIFICIAL_EXON_LEN
+    
+    return upstream, downstream, upstream_start, upstream_end, downstream_start, downstream_end
 
 def get_info(line, event_type_general):
     """
-    Extracts and returns relevant information from a given line of data based on the event type.
-    Args:
-        line (str): A tab-separated string containing various fields of data.
-        event_type_general (str): The general type of the event (e.g., "constitutive", "tandem_cassette", "cassette").
-    Returns:
-        tuple: A tuple containing the extracted information in the following order:
-            - gene_id (str): The gene ID.
-            - gene_name (str): The gene name.
-            - seqid (str): The sequence ID.
-            - strand (str): The strand information.
-            - denovo (str): Denovo information.
-            - reference_exon_coord (str): Reference exon coordinates.
-            - spliced_with (str): Spliced with information.
-            - spliced_with_coord (str): Spliced with coordinates.
-            - junction_name (str): Junction name.
-            - junction_coord (str): Junction coordinates.
-            - mean_psi (str or int): Median PSI value.
-            - event_type (str): The specific event type.
-    Raises:
-        ValueError: If the line does not contain the expected number of fields for the given event type.
-    Note:
-        If the LSV ID is empty or the line does not contain the expected number of fields for the "tandem_cassette" event type, 
-        the function returns "invalid".
+    Extracts fields and ensures mean_psi is a clean FLOAT number.
     """
     line = line.strip().split("\t")
+    
+    # Safety check for line length
+    if len(line) < 14: 
+        return "invalid"
+
     lsv_id = line[5]
     if lsv_id == "":
         return "invalid"
+
     gene_id = line[1]
     gene_name = line[2]
     seqid = line[3]
@@ -129,142 +116,121 @@ def get_info(line, event_type_general):
     spliced_with_coord = line[11]
     junction_name = line[12]
     junction_coord = line[13]
-    if event_type_general != "constitutive":
-        try:
-            mean_psi = line[18]
-        except:
-            mean_psi = 0
-    else:
-        try:
-            mean_psi = line[19]
-        except:
-            mean_psi = 0
-    # tandem cassette
+    
+    # CRITICAL FIX: Ensure mean_psi is a float. 
+    # Python's float() automatically converts scientific notation (e.g., "1.2e-5") to decimal.
+    mean_psi = 0.0
+    idx_psi = 18 if event_type_general != "constitutive" else 19
+
+    # Tandem cassette override
+    event_type = event_type_general
     if event_type_general == "tandem_cassette":        
         if len(line) != 22:
             return "invalid"
         junction_name = line[14]
         junction_coord = line[15]
-        mean_psi = line[20]
+        idx_psi = 20
         event_type = "SE"
     elif event_type_general == "cassette":
         event_type = "SE"
-    else:
-        event_type = event_type_general
+
+    try:
+        # This converts string to float, handling scientific notation automatically
+        mean_psi = float(line[idx_psi])
+    except (ValueError, IndexError):
+        mean_psi = 0.0
     
     return gene_id, gene_name, seqid, strand, denovo, reference_exon_coord, spliced_with, spliced_with_coord, junction_name, junction_coord, mean_psi, event_type
 
 def define_specific_event_type(event_type_general, junction_name, strand, upstream_end, junction_coord_start, junction_coord_end, downstream_start, downstream_end):
     """
-    Determines the specific event type based on the general event type and various junction parameters.
-
-    Parameters:
-    event_type_general (str): The general type of the event (e.g., "A3and5SS", "AI", "constitutive").
-    junction_name (str): The name of the junction (e.g., "J1", "J2", "spliced", "intron").
-    strand (str): The strand of the DNA ("+" or "-").
-    upstream_end (int): The end coordinate of the upstream exon.
-    junction_coord_start (int): The start coordinate of the junction.
-    junction_coord_end (int): The end coordinate of the junction.
-    downstream_start (int): The start coordinate of the downstream exon.
-    downstream_end (int): The end coordinate of the downstream exon.
-
-    Returns:
-    str: The specific event type (e.g., "A3SS", "A5SS", "RI_spliced", "RI_intron", "constitutive", "A3and5SS").
+    Disambiguates event types (A3SS vs A5SS, etc).
     """
     if event_type_general == "A3and5SS":
         if "J1" in junction_name:
-            if strand == "+":
-                return "A3SS"
-            elif strand == "-":
-                return "A5SS"
+            return "A3SS" if strand == "+" else "A5SS"
         if "J2" in junction_name:
-            if strand == "+":
-                return "A3SS"
-            elif strand == "-":
-                return "A5SS"
-    elif event_type_general == "AI": # alternative intron
+            return "A3SS" if strand == "+" else "A5SS"
+            
+    elif event_type_general == "AI": 
         if "spliced" in junction_name:
             if (upstream_end == junction_coord_start) and (downstream_start == junction_coord_end):
                 return "RI_spliced"
             else:
-                if (junction_coord_start < downstream_start) and (junction_coord_start != upstream_end) and ( (downstream_start == junction_coord_end)):
-                    if strand == "+":
-                        return "A5SS"
-                    elif strand == "-":
-                        return "A3SS"
+                if (junction_coord_start < downstream_start) and (junction_coord_start != upstream_end) and (downstream_start == junction_coord_end):
+                    return "A5SS" if strand == "+" else "A3SS"
                 elif (junction_coord_end > upstream_end) and (junction_coord_end != downstream_start) and (upstream_end == junction_coord_start):
-                    if strand == "+":
-                        return "A3SS"
-                    elif strand == "-":
-                        return "A5SS"
+                    return "A3SS" if strand == "+" else "A5SS"
                 else:
                     return "A3and5SS"
         elif "intron" in junction_name:
             return "RI_intron"
+            
     elif event_type_general == "constitutive":
         if "intron" in junction_name:
             return "RI_intron"
         else:
             return "constitutive"
+    
+    return event_type_general # Default fallback
 
 def file_processing(file, srr, event_type_general, dictionary): 
     """
-    Processes a given file to extract and organize splicing event information.
-    Args:
-        file (str): Path to the input file containing splicing event data.
-        sra_id (str): Sample Run Repository identifier.
-        event_type_general (str): General type of splicing event.
-        dictionary (dict): Dictionary to store processed splicing event data.
-    Returns:
-        dict: Updated dictionary with processed splicing event data.
-    The function performs the following steps:
-        1. Opens the input file and skips initial comment lines.
-        2. Iterates through each line of the file to extract splicing event information.
-        3. Validates and processes each line to extract relevant data fields.
-        4. Defines new coordinate columns and event identifiers.
-        5. Adds the processed data to the provided dictionary, handling duplicates and averaging median PSI values if necessary.
+    Reads file, calculates coordinates, and aggregates into dictionary.
+    FIX: Correctly skips metadata (#) AND the header line.
     """
     removed_events_counts = 0
-    line_counts = 0
+    
     with open(file, "r") as f:
-        for line in f:
-            
-            if not line.startswith("#"):
-                break
+        # 1. Pula linhas de comentário (#)
+        line = f.readline()
+        while line.startswith("#"):
+            line = f.readline()
+        
+        # Neste ponto, a variável 'line' contém o Cabeçalho (ex: "Gene Name...").
+        # Nós NÃO queremos processar essa linha.
+        # O ponteiro do arquivo já está na próxima linha (o primeiro dado real).
+        
+        # 2. Itera apenas sobre os dados
         for line in f: 
+            # Segurança para linhas vazias no final do arquivo
+            if not line.strip(): 
+                continue
+
             info = get_info(line, event_type_general)
-            line_counts += 1
 
             if info == "invalid":
                 removed_events_counts += 1 
                 continue
-            else:
-                gene_id, gene_name, seqid, strand, denovo, reference_exon_coord, spliced_with, spliced_with_coord, junction_name, junction_coord, mean_psi, event_type = info
+            
+            gene_id, gene_name, seqid, strand, denovo, reference_exon_coord, spliced_with, spliced_with_coord, junction_name, junction_coord, mean_psi, event_type = info
 
-
-            # Defining new coordinates colunms: Coord, full_coord, upstream_exon_coord and downstream_exon_coord
-            coord = f"{seqid}:{junction_coord}"
+            # Defining new coordinates
             upstream_exon_coord, downstream_exon_coord, upstream_start, upstream_end, downstream_start, downstream_end = determine_upstream_downstream(reference_exon_coord, spliced_with_coord)
             junction_coord_start, junction_coord_end = extract_start_end(junction_coord)
+            
+            coord = f"{seqid}:{junction_coord}"
             full_coord = f"{seqid}:{upstream_start},{junction_coord_start}-{junction_coord_end},{downstream_end}"
             if event_type == "RI" and "intron" in junction_name:
                 full_coord = f"{seqid}:{upstream_start},{downstream_end}"
             
-            # Defining event_id
+            # Defining event_id logic
             if event_type in ["A3and5SS", 'AI', "constitutive"]:
                 event_type = define_specific_event_type(event_type_general, junction_name, strand, upstream_end, junction_coord_start, junction_coord_end, downstream_start, downstream_end)
-            else:
-                event_type = event_type
+            
+            if event_type is None: # Safety catch
+                event_type = event_type_general
+
             event_id = f"{gene_name}_{full_coord}_{strand}_{event_type}"
             search = f"{gene_name}_{full_coord}_{strand}_"
 
-            # Adding processed data to a dictionary
+            # Adding processed data to dictionary (Deduplication within file)
             if event_id in dictionary.keys():
                 removed_events_counts += 1
                 registered_mean_psi = dictionary[event_id][13]
+                # Assuming simple average for duplicates within same file
                 if registered_mean_psi != mean_psi:
-                    mean_psi = (float(registered_mean_psi) + float(mean_psi)) / 2
-
+                    mean_psi = (registered_mean_psi + mean_psi) / 2
                     
             dictionary[event_id] = [search, gene_name, gene_id, seqid, strand, event_type, junction_coord_start, junction_coord_end, coord, full_coord, upstream_exon_coord, downstream_exon_coord, denovo, mean_psi, 1, 0, srr]
 
@@ -272,115 +238,125 @@ def file_processing(file, srr, event_type_general, dictionary):
 
 def add_to_database(db, processed_data, species):
     """
-    Adds processed splicing event data to the specified SQLite database.
-
-    Parameters:
-    db (str): The path to the SQLite database file.
-    processed_data (dict): A dictionary containing processed splicing event data. 
-                           The keys are event IDs and the values are tuples containing:
-                           (search, gene_name, gene_id, seqid, strand, event_type, 
-                           junction_coord_start, junction_coord_end, coord, full_coord, 
-                           upstream_exon_coord, downstream_exon_coord, denovo, mean_psi, 
-                           majiq, sgseq, srr).
-
-    The function inserts data into two tables:
-    - splicing_events: Contains information about the splicing events.
-    - sample_info: Contains sample-specific information related to the splicing events.
-
-    If an entry with the same event_id already exists in the tables, it will be ignored.
+    Adds data to SQLite. Implements 'Start OR End' logic for resolving Constitutive vs Alternative.
     """
     conn = sqlite3.connect(db)
+    conn.execute("PRAGMA foreign_keys = ON") 
     cursor = conn.cursor()
 
-    for event_id, values in processed_data.items():
-        search, gene_name, gene_id, seqid, strand, event_type, junction_coord_start, junction_coord_end, coord, full_coord, upstream_exon_coord, downstream_exon_coord, denovo, mean_psi, majiq, sgseq, srr = values
+    for event_id_raw, values in processed_data.items():
+        search, gene_name, gene_id, seqid, strand, current_event_type, junction_coord_start, junction_coord_end, coord, full_coord, upstream_exon_coord, downstream_exon_coord, denovo, psi_value, majiq, sgseq, srr = values
 
-        cursor.execute(''' 
-        INSERT INTO splicing_events 
-            (event_id, search, gene_name, gene_id, seqid, strand, event_type, 
-            start, end, coord, full_coord, upstream_exon_coord, downstream_exon_coord, 
-            mean_psi_majiq, mean_psi_sgseq, species)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(event_id) DO UPDATE SET
-            mean_psi_majiq = (mean_psi_majiq + excluded.mean_psi_majiq) / 2
-        ''', (event_id, search, gene_name, gene_id, seqid, strand, event_type,
-              junction_coord_start, junction_coord_end, coord, full_coord,
-              upstream_exon_coord, downstream_exon_coord, mean_psi, 0, species))
+        # 1. Coordinate Setup
+        search_start = junction_coord_start
+        search_end = junction_coord_end
 
+        # 2. Geographic Search (Start OR End)
         cursor.execute('''
-        INSERT OR IGNORE INTO sample_info (event_id, de_novo, mean_psi_majiq, psi_sgseq, sra_id, majiq, sgseq, species)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (event_id, denovo, mean_psi, 0, srr, majiq, sgseq, species))
+            SELECT event_id, event_type, start, end FROM splicing_events 
+            WHERE seqid=? 
+            AND strand=?
+            AND (start=? OR end=?) 
+        ''', (seqid, strand, search_start, search_end))
+        
+        matches = cursor.fetchall()
+        
+        existing_match = None
+        
+        if matches:
+            # Prioritize Alternative over Constitutive
+            alternatives = [m for m in matches if m[1] != "constitutive"]
+            constitutives = [m for m in matches if m[1] == "constitutive"]
+            
+            if alternatives:
+                existing_match = alternatives[0] 
+            elif constitutives:
+                existing_match = constitutives[0] 
+
+        final_event_id = event_id_raw 
+        action = "INSERT_NEW"
+
+        if existing_match:
+            existing_id, existing_type, ex_start, ex_end = existing_match
+            
+            is_existing_const = (existing_type == "constitutive")
+            is_current_const = (current_event_type == "constitutive")
+
+            if is_existing_const and not is_current_const:
+                action = "UPGRADE_TO_ALT"
+                final_event_id = event_id_raw # New ID wins
+            elif not is_existing_const and is_current_const:
+                action = "USE_EXISTING_ALT"
+                final_event_id = existing_id # Old ID wins
+            else:
+                action = "MERGE"
+                final_event_id = existing_id
+
+        # 3. Execution
+        if action == "INSERT_NEW":
+            cursor.execute('''
+            INSERT INTO splicing_events 
+            (event_id, event_type, start, end, search, gene_name, gene_id, seqid, strand, coord, full_coord, upstream_exon_coord, downstream_exon_coord, mean_psi_majiq, mean_psi_sgseq, de_novo, species)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+            ''', (final_event_id, current_event_type, search_start, search_end, search, gene_name, gene_id, seqid, strand, coord, full_coord, upstream_exon_coord, downstream_exon_coord, psi_value, denovo, species))
+
+        elif action == "UPGRADE_TO_ALT":
+            cursor.execute('''
+            UPDATE splicing_events 
+            SET event_id=?, 
+                event_type=?, 
+                search=?,     
+                full_coord=?, 
+                upstream_exon_coord=?, 
+                downstream_exon_coord=?,
+                mean_psi_majiq = (mean_psi_majiq + ?) / 2,
+                de_novo = MIN(de_novo, ?)
+            WHERE event_id=?
+            ''', (final_event_id, current_event_type, search, full_coord, upstream_exon_coord, downstream_exon_coord, psi_value, denovo, existing_id))
+
+        elif action == "USE_EXISTING_ALT" or action == "MERGE":
+            cursor.execute('''
+            UPDATE splicing_events 
+            SET mean_psi_majiq = (mean_psi_majiq + ?) / 2,
+                de_novo = MIN(de_novo, ?)
+            WHERE event_id=?
+            ''', (psi_value, denovo, final_event_id))
+
+        # 4. Sample Info
+        cursor.execute('''
+        INSERT OR IGNORE INTO sample_info (event_id, observed_type, psi_majiq, psi_sgseq, sra_id, majiq, sgseq, species)
+        VALUES (?, ?, ?, 0, ?, ?, ?, ?)
+        ''', (final_event_id, current_event_type, psi_value, srr, majiq, sgseq, species))
 
     conn.commit()
     conn.close()
 
-
 def majiq_parser(voila_path, db, srr, species):
     """
-    Parses MAJIQ output files from a specified directory and processes them based on their type.
-    Args:
-        voila_path (str or Path): The path to the directory containing MAJIQ output files.
-        db (DatabaseConnection): The database connection object where parsed data will be stored.
-        srr (str): The sample run reference identifier.
-    Returns:
-        None
-    The function iterates over files in the specified directory, identifies the type of alternative splicing event
-    based on the file name, processes the file accordingly, and stores the parsed data in a dictionary. Finally,
-    the parsed data is added to the specified database.
-    File types and their corresponding splicing events:
-        - "alt5prime": Alternative 5' splice site (A5SS)
-        - "alt3prime": Alternative 3' splice site (A3SS)
-        - "alt3and5prime": Alternative 3' and 5' splice sites (A3and5SS)
-        - "alternate_first_exon": Alternate First Exon (AFE)
-        - "alternate_last_exon": Alternate Last Exon (ALE)
-        - "alternative_intron": Alternative Intron (AI)
-        - "tandem_cassette": Tandem Cassette
-        - "cassette": Cassette
-        - "mutually_exclusive": Mutually Exclusive Exons (MXE)
-        - "constitutive": Constitutive exons
-    Logging:
-        The function logs the processing status of each file and the completion of adding data to the database.
+    Main parser orchestrator.
     """
     data = {}
-    # output_file = "data.tsv"
-    voila_path = Path(voila_path)  # Convert to Path object
+    voila_path = Path(voila_path)
 
-    for file in voila_path.iterdir():  # Iterate over files in the directory
+    # Define mappings based on file naming convention
+    # Note: Ensure these substrings match your actual filenames exactly
+    file_types = {
+        "alt5prime": "A5SS", "alt3prime": "A3SS", "alt3and5prime": "A3and5SS",
+        "alternate_first_exon": "AFE", "alternate_last_exon": "ALE",
+        "alternative_intron": "AI", "tandem_cassette": "tandem_cassette",
+        "cassette": "cassette", "mutually_exclusive": "MXE", "constitutive": "constitutive"
+    }
+
+    for file in voila_path.iterdir():
         logging.info(f"Processing {file.name}")
-        if "alt5prime" in file.name:
-            file_processing(file, srr, "A5SS", data)
-            logging.info(f"Completed {file.name} processing")
-        elif "alt3prime" in file.name:
-            file_processing(file, srr, "A3SS", data)
-            logging.info(f"Completed {file.name} processing")
-        elif "alt3and5prime" in file.name:
-            file_processing(file, srr, "A3and5SS", data)
-            logging.info(f"Completed {file.name} processing")
-        elif "alternate_first_exon" in file.name:
-            file_processing(file, srr, "AFE", data)
-            logging.info(f"Completed {file.name} processing")
-        elif "alternate_last_exon" in file.name:
-            file_processing(file, srr, "ALE", data)
-            logging.info(f"Completed {file.name} processing")
-        elif "alternative_intron" in file.name:
-            file_processing(file, srr, "AI", data)
-            logging.info(f"Completed {file.name} processing")
-        elif "tandem_cassette" in file.name:
-            file_processing(file, srr, "tandem_cassette", data)
-            logging.info(f"Completed {file.name} processing")
-        elif "cassette" in file.name:
-            file_processing(file, srr, "cassette", data)
-            logging.info(f"Completed {file.name} processing")
-        elif "mutually_exclusive" in file.name:
-            file_processing(file, srr, "MXE", data)
-            logging.info(f"Completed {file.name} processing")
-        elif "constitutive" in file.name:
-            file_processing(file, srr, "constitutive", data)
+        matched = False
+        for key, etype in file_types.items():
+            if key in file.name:
+                file_processing(file, srr, etype, data)
+                matched = True
+                break
+        if matched:
             logging.info(f"Completed {file.name} processing")
     
     add_to_database(db, data, species)
-    logging.info(f"Completed adding to database")
-            
-    
-# majiq_parser("/home/bia/LandscapeSplicingGrasses/SplicingLandscapeGrasses/merging_outputs/data", "", "srrTESTE123456")
+    logging.info(f"Completed adding to database for {srr}")
