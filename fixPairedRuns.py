@@ -6,7 +6,7 @@ import subprocess
 import time
 import shutil
 import sys
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional, Set
 
 TABLE = "sra_metadata"
 ID_COL = "sra_id"
@@ -30,6 +30,14 @@ XTRACT_ORIGINAL_FASTQ_CMD = (
     "-element @filename"
 )
 
+#Some files are not fastq but BAMs, in that case if nreads is variable we cannot fix layout, so we annotated them as BAM files
+XTRACT_ORIGINAL_TYPES_CMD = (
+    "xtract -pattern RUN "
+    "-element @accession "
+    "-block SRAFile "
+    "-if @supertype -equals Original "
+    "-element @semantic_name"
+)
 def check_edirect_binaries(binaries=("esearch", "efetch", "xtract")) -> None:
     missing = [b for b in binaries if shutil.which(b) is None]
     if missing:
@@ -59,12 +67,13 @@ def ensure_columns(conn: sqlite3.Connection) -> None:
 def log_layout_mismatch(srr: str, annotated: Optional[str], fixed: Optional[str]) -> None:
     if annotated is None or fixed is None:
         return
-    f = fixed.strip().upper()
-    if f == "MISSING":
+    f = fixed.strip().upper()  
+    if f.startswith("MISSING"):
         return
     a = annotated.strip().upper()
     if a != f:
         print(f"[LAYOUT-MISMATCH] {srr} annotated={a} fixed={f}")
+
 
 def chunks(xs: List[str], n: int):
     for i in range(0, len(xs), n):
@@ -101,6 +110,14 @@ def run_edirect_batch_original_fastqs(srrs: List[str], api_key: Optional[str], t
     proc = _run_pipeline(cmd, api_key=api_key, timeout_sec=timeout_sec)
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or f"EDirect original-fastq query failed for batch of {len(srrs)}")
+    return proc.stdout.strip()
+
+def run_edirect_batch_original_types(srrs: List[str], api_key: Optional[str], timeout_sec: int = 180) -> str:
+    query = build_or_query(srrs)
+    cmd = f'esearch -db sra -query "{query}" | efetch -format native | {XTRACT_ORIGINAL_TYPES_CMD}'
+    proc = _run_pipeline(cmd, api_key=api_key, timeout_sec=timeout_sec)
+    if proc.returncode != 0:
+        raise RuntimeError(proc.stderr.strip() or f"EDirect original-types query failed for batch of {len(srrs)}")
     return proc.stdout.strip()
 
 def parse_xtract_output(out: str) -> Dict[str, Tuple[Optional[str], Optional[int], Optional[int]]]:
@@ -181,6 +198,26 @@ def parse_original_fastq_counts(out: str) -> Dict[str, int]:
         m[srr] = max(0, len(parts) - 1)
     return m
 
+def parse_original_types(out: str) -> Dict[str, set]:
+    """
+    Parse lines like:
+      SRR5513003 bam
+      SRR26991442 fastq fastq
+    Return:
+      SRR -> set of original semantic_name values (lowercased)
+    """
+    m: Dict[str, set] = {}
+    if not out:
+        return m
+    for line in out.splitlines():
+        parts = line.strip().split()
+        if not parts:
+            continue
+        run_id = parts[0]
+        types = {p.strip().lower() for p in parts[1:] if p.strip()}
+        m[run_id] = types
+    return m
+
 def compute_fixed_layout_from_reads(
     annotated_layout: Optional[str],
     r1: Optional[int],
@@ -188,7 +225,7 @@ def compute_fixed_layout_from_reads(
     tol: float = 0.05,
 ) -> Optional[str]:
     """
-    New decision rule (using read spot counts):
+    Decision rule (using read spot counts):
       rx = max(r1, r2)
       fixed_layout = PAIRED if annotated_layout==PAIRED AND rx>0 AND abs(r1-r2)/rx <= tol
       else SINGLE
@@ -298,7 +335,9 @@ def main() -> None:
                 out_fastqs = run_edirect_batch_original_fastqs(need_fallback, api_key=api_key, timeout_sec=args.timeout)
                 original_fastq_counts = parse_original_fastq_counts(out_fastqs)
 
-            updates = []
+            updates: List[Tuple[Optional[int], Optional[int], str, str]] = []
+            unresolved: List[Tuple[str, Optional[int], Optional[int], Optional[str]]] = []
+
             for run_id in batch:
                 annotated = layout_by_id.get(run_id)
 
@@ -316,12 +355,27 @@ def main() -> None:
                     fl = compute_fixed_layout_from_original_fastqs(ofc)
 
                 if fl is None:
-                    missing_ids += 1
-                    fl = "MISSING"
-                    print(f"[MISSING] {run_id} -> fixed_layout=MISSING")
+                    unresolved.append((run_id, r1, r2, annotated))
+                    continue
 
                 log_layout_mismatch(run_id, annotated, fl)
                 updates.append((r1, r2, fl, run_id))
+
+            # Resolve remaining undecidable runs by separating BAM-original cases
+            if unresolved: 
+                need_types_ids = [u[0] for u in unresolved]
+                out_types = run_edirect_batch_original_types(need_types_ids, api_key=api_key, timeout_sec=args.timeout)
+                original_types = parse_original_types(out_types)
+
+                for run_id, r1, r2, annotated in unresolved:
+                    types = original_types.get(run_id, set())
+                    if "bam" in types:
+                        fl = "PAIRED_BAM_ORIGINAL"
+                    else:
+                        fl = "MISSING"
+                        missing_ids += 1
+                        print(f"[MISSING] {run_id} -> fixed_layout={fl} (original_types={','.join(sorted(types)) or 'NA'})")
+                    updates.append((r1, r2, fl, run_id))
 
             if not updates:
                 continue
