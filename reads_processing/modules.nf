@@ -44,7 +44,7 @@ process DOWNLOAD_READ_FTP {
 process RUN_BBDUK {
     tag "${sra_accession}"
     publishDir "${params.outdir}/cleanup", pattern: "${sra_accession}.trimmed*"
-    publishDir "${params.outdir}/stats", pattern: "${sra_accession}.bbduk.log"
+    publishDir "${params.outdir}/stats/bbduk", pattern: "${sra_accession}.bbduk.log"
     cache 'lenient'
     errorStrategy 'retry'
     maxRetries 3
@@ -77,7 +77,7 @@ process RUN_BBDUK {
         threads=$task.cpus \\
         $contaminants_fa \\
         $args \\
-        &> "${sra_accession}.bbduk.log" \\
+        2> "${sra_accession}.bbduk.log" \\
 
     original_file_1="\$(readlink -f ${json_file_to_clean})" && \\
     tam=\$(stat --format=%s "\$original_file_1") && \\
@@ -145,7 +145,7 @@ process WGET_DOWNLOADER {
 process ALTERNATIVE_RUN_BBDUK {
     tag "${sra_accession}"
     publishDir "${params.outdir}/cleanup", pattern: "${sra_accession}.trimmed*"
-    publishDir "${params.outdir}/stats", pattern: "${sra_accession}.bbduk.log"
+    publishDir "${params.outdir}/stats/bbduk", pattern: "${sra_accession}.bbduk.log"
     cache 'lenient'
     errorStrategy 'retry'
     maxRetries 3
@@ -177,7 +177,7 @@ process ALTERNATIVE_RUN_BBDUK {
         threads=$task.cpus \\
         $contaminants_fa \\
         $args \\
-        &> "${sra_accession}.bbduk.log"
+        2> "${sra_accession}.bbduk.log"
 
     original_file="\$(readlink -f ${reads1})"  && \\
     tam=\$(stat --format=%s "\$original_file") && \\
@@ -193,8 +193,9 @@ process ALTERNATIVE_RUN_BBDUK {
 }
 
 process GENOME_GENERATE_STAR {
-    tag "${species}"
-    publishDir "${params.outdir}/genomeGenerate"
+    tag "${species_name}"
+    publishDir "${params.outdir}/genomeGenerate", pattern: "${species_name}/*"
+    publishDir "${params.outdir}/stats/star", pattern: "${species_name}/*Log.out"
     cache 'lenient'
     errorStrategy 'finish'
 
@@ -207,6 +208,7 @@ process GENOME_GENERATE_STAR {
 
     output:
     path "${species_name}", emit: genome_index_dir
+    path "${species_name}/*Log.out", emit: genome_index_logs
 
     script:
     def genDir = "${species_name}"
@@ -222,7 +224,8 @@ process GENOME_GENERATE_STAR {
 
 process MAPPING_STAR {
     tag "${sra_accession} on ${species_name}"
-    publishDir "${params.outdir}/cleanup"
+    publishDir "${params.outdir}/cleanup", pattern: "${species_name}/${sra_accession}/*"
+    publishDir "${params.outdir}/stats/star", pattern: "${species_name}/${sra_accession}/*Log*.out"
     cache 'lenient'
     errorStrategy 'ignore'
 
@@ -235,6 +238,7 @@ process MAPPING_STAR {
 
     output:
     tuple path("${species_name}/${sra_accession}"), path("${species_name}/${sra_accession}/*.bam.bai"), path("${species_name}/${sra_accession}/*.bam"), val(sra_accession), emit: bam_sra_tuple
+    path "${species_name}/${sra_accession}/*Log*.out", emit: star_log_files
 
     script:
     def outPrefixDir = "${species_name}/${sra_accession}"
