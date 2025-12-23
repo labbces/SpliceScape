@@ -43,7 +43,8 @@ process DOWNLOAD_READ_FTP {
 
 process RUN_BBDUK {
     tag "${sra_accession}"
-    publishDir "${params.outdir}/cleanup"
+    publishDir "${params.outdir}/cleanup", pattern: "${sra_accession}.trimmed*"
+    publishDir "${params.outdir}/stats", pattern: "${sra_accession}.bbduk.log"
     cache 'lenient'
     errorStrategy 'retry'
     maxRetries 3
