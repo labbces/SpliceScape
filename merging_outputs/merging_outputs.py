@@ -8,19 +8,29 @@ parser.add_argument('--db', type=str, required=True, help='Path to the SQLite da
 parser.add_argument('--voila', type=str, required=True, help='Path to the MAJIQ Voila output directory.')
 parser.add_argument('--spp', type=str, required=True, help='Species name.')
 parser.add_argument('--srr_list', type=str, required=True, help='Path to the file containing list of SRRs.')
+parser.add_argument('--genome_version', type=str, help='Genome version used to identify splicing events. If genome_info table on table, would be linked.', required=True)
 parser.add_argument('--ref-table', type=str, help='Reference table to add sra_id relation (Optional).', required=False)
 parser.add_argument('--ref-column', type=str, help='Column name for sra reference (Optional).', default="sra_id", required=False)
 args = parser.parse_args()
 
-def create_tables(db, ref_table=None, ref_column="sra_id"):
-    """
-    Creates sample_info and splicing_events tables with correct schema.
-    """
+
+def create_tables(db, genome_version, species_name, ref_table=None, ref_column="sra_id"):
     try:
         with sqlite3.connect(db) as conn:
             cursor = conn.cursor()
-            
             cursor.execute("PRAGMA foreign_keys = ON")
+
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS genome_info (
+                        genome_version TEXT PRIMARY KEY,
+                        species_name TEXT
+                        )
+                        ''')
+            
+            cursor.execute(
+                            "INSERT or IGNORE INTO genome_info (genome_version, species_name) VALUES (?, ?)",
+                        (genome_version, species_name)
+                        )
             
             # 1. Splicing Events Table (Global Entities)
             cursor.execute('''
@@ -42,7 +52,8 @@ def create_tables(db, ref_table=None, ref_column="sra_id"):
                 mean_psi_majiq REAL,
                 mean_psi_sgseq REAL,
                 de_novo TEXT,
-                species TEXT
+                species TEXT,
+                genome_version TEXT
             )
             ''')
 
@@ -76,15 +87,19 @@ def create_tables(db, ref_table=None, ref_column="sra_id"):
 
             conn.commit()
             print(f"Database '{db}' successfully verified/created.")
+
     except Exception as e:
         print(f"Fail to create tables: {e}")
+        sys.exit(1)
 
 # --- Execution ---
-db_path = args.db
-create_tables(db_path, args.ref_table, args.ref_column)
 
+genome_version = args.genome_version
 srr_list = args.srr_list
 species = args.spp
+db_path = args.db
+create_tables(db_path, genome_version, species, args.ref_table, args.ref_column)
+
 
 # Check if SRR list exists
 if not os.path.exists(srr_list):
@@ -100,7 +115,7 @@ with open(srr_list, 'r') as file:
         
         if os.path.exists(voila_dir):
             print(f"Processing {srr}...")
-            majiq_parser(voila_dir, db_path, srr, species)
+            majiq_parser(voila_dir, db_path, srr, species, genome_version)
             print(f"Processing {srr} completed")
         else:
             print(f"Voila directory for {srr} does not exist: {voila_dir}")

@@ -174,11 +174,14 @@ def define_specific_event_type(event_type_general, junction_name, strand, upstre
     
     return event_type_general # Default fallback
 
-def file_processing(file, srr, event_type_general, dictionary): 
+def file_processing(file, srr, event_type_general, dictionary, genome_version): 
     """
     Reads file, calculates coordinates, and aggregates into dictionary.
     FIX: Correctly skips metadata (#) AND the header line.
     """
+
+    # remove spaces
+    genome_version_clean = genome_version.replace(" ", "")
     removed_events_counts = 0
     
     with open(file, "r") as f:
@@ -221,8 +224,8 @@ def file_processing(file, srr, event_type_general, dictionary):
             if event_type is None: # Safety catch
                 event_type = event_type_general
 
-            event_id = f"{gene_name}_{full_coord}_{strand}_{event_type}"
-            search = f"{gene_name}_{full_coord}_{strand}_"
+            event_id = f"{genome_version_clean}_{gene_name}_{full_coord}_{strand}_{event_type}"
+            search = f"{genome_version_clean}_{gene_name}_{full_coord}_{strand}_"
 
             # Adding processed data to dictionary (Deduplication within file)
             if event_id in dictionary.keys():
@@ -236,7 +239,7 @@ def file_processing(file, srr, event_type_general, dictionary):
 
     return dictionary
 
-def add_to_database(db, processed_data, species):
+def add_to_database(db, processed_data, species, genome_version):
     """
     Adds data to SQLite. Implements 'Start OR End' logic for resolving Constitutive vs Alternative.
     """
@@ -296,9 +299,9 @@ def add_to_database(db, processed_data, species):
         if action == "INSERT_NEW":
             cursor.execute('''
             INSERT INTO splicing_events 
-            (event_id, event_type, start, end, search, gene_name, gene_id, seqid, strand, coord, full_coord, upstream_exon_coord, downstream_exon_coord, mean_psi_majiq, mean_psi_sgseq, de_novo, species)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
-            ''', (final_event_id, current_event_type, search_start, search_end, search, gene_name, gene_id, seqid, strand, coord, full_coord, upstream_exon_coord, downstream_exon_coord, psi_value, denovo, species))
+            (event_id, event_type, start, end, search, gene_name, gene_id, seqid, strand, coord, full_coord, upstream_exon_coord, downstream_exon_coord, mean_psi_majiq, mean_psi_sgseq, de_novo, species, genome_version)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
+            ''', (final_event_id, current_event_type, search_start, search_end, search, gene_name, gene_id, seqid, strand, coord, full_coord, upstream_exon_coord, downstream_exon_coord, psi_value, denovo, species, genome_version))
 
         elif action == "UPGRADE_TO_ALT":
             cursor.execute('''
@@ -331,7 +334,7 @@ def add_to_database(db, processed_data, species):
     conn.commit()
     conn.close()
 
-def majiq_parser(voila_path, db, srr, species):
+def majiq_parser(voila_path, db, srr, species, genome_version):
     """
     Main parser orchestrator.
     """
@@ -352,11 +355,11 @@ def majiq_parser(voila_path, db, srr, species):
         matched = False
         for key, etype in file_types.items():
             if key in file.name:
-                file_processing(file, srr, etype, data)
+                file_processing(file, srr, etype, data, genome_version)
                 matched = True
                 break
         if matched:
             logging.info(f"Completed {file.name} processing")
     
-    add_to_database(db, data, species)
+    add_to_database(db, data, species, genome_version)
     logging.info(f"Completed adding to database for {srr}")
