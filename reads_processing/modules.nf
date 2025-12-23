@@ -61,6 +61,7 @@ process RUN_BBDUK {
 
     output:
     tuple path("${sra_accession}.trimmed.R1.fastq.gz"), path("${sra_accession}.trimmed.R2.fastq.gz"), val(sra_accession), emit: trimmed_reads_sra
+    path "${sra_accession}.bbduk.log", emit: bbduk_log_file
 
     script:
     def raw = "in1=${reads1} in2=${reads2}"
@@ -142,7 +143,8 @@ process WGET_DOWNLOADER {
 
 process ALTERNATIVE_RUN_BBDUK {
     tag "${sra_accession}"
-    publishDir "${params.outdir}/cleanup"
+    publishDir "${params.outdir}/cleanup", pattern: "${sra_accession}.trimmed*"
+    publishDir "${params.outdir}/stats", pattern: "${sra_accession}.bbduk.log"
     cache 'lenient'
     errorStrategy 'retry'
     maxRetries 3
@@ -159,6 +161,7 @@ process ALTERNATIVE_RUN_BBDUK {
 
     output:
     tuple path("${sra_accession}.trimmed.R1.fastq.gz"), path("${sra_accession}.trimmed.R2.fastq.gz"), val(sra_accession), emit: trimmed_reads_sra
+    path "${sra_accession}.bbduk.log", emit: bbduk_log_file
 
     script:
     def raw = "in1=${reads1} in2=${reads2}"
