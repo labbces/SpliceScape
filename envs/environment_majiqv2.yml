@@ -26,7 +26,7 @@ dependencies:
   - nextflow=25.04.8
 
   # --- R base ---
-  - r-base=4.3
+  - r-base=4.4
 
   # --- CRAN R dependencies ---
   - r-biocmanager
@@ -61,6 +61,7 @@ dependencies:
   - bioconductor-sgseq
   - bioconductor-xvector
   - bioconductor-zlibbioc
+  - bioconductor-txdbmaker
 
 
 prefix: /Storage/progs/SpliceScape_env_p310_majiq2
