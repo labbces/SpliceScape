@@ -29,8 +29,8 @@ Example usage:
 #TODO: Update URL, only the base URL must be provided.
   # Direct URL download (paired):
   ./pipeline.py --sra SRR123 --download-mode url \
-    --url-r1 https://.../sample_R1.fastq.gz \
-    --url-r2 https://.../sample_R2.fastq.gz \
+    --url-r1 https://.../sample_1.fastq.gz \
+    --url-r2 https://.../sample_2.fastq.gz \
     --outdir results \
     --adapters adapters.fa \
     --star-index /path/to/STARindex \
@@ -50,7 +50,6 @@ from typing import Optional, Sequence
 from urllib.parse import urljoin
 import urllib.request
 from urllib.error import URLError, HTTPError
-from typing import Optional
 
 # ---------------------------
 # Helpers
@@ -91,7 +90,7 @@ def run_cmd(
         ensure_dir(stdout_path.parent)
     if stderr_path:
         ensure_dir(stderr_path.parent)
-
+    print(cmd)
     stdout_handle = open(stdout_path, "wb") if stdout_path else None
     stderr_handle = open(stderr_path, "wb") if stderr_path else None
     try:
@@ -189,11 +188,11 @@ def build_paths(sample_id: str, out_dir: Path, paired: bool) -> SamplePaths:
     for d in (raw_dir, clean_dir, star_dir, majiq_dir, sgseq_dir, markers):
         ensure_dir(d)
 
-    raw_r1 = raw_dir / f"{sample_id}_R1.fastq.gz"
-    raw_r2 = (raw_dir / f"{sample_id}_R2.fastq.gz") if paired else None
+    raw_r1 = raw_dir / f"{sample_id}_1.fastq.gz"
+    raw_r2 = (raw_dir / f"{sample_id}_2.fastq.gz") if paired else None
 
-    clean_r1 = clean_dir / f"{sample_id}_R1.clean.fastq.gz"
-    clean_r2 = (clean_dir / f"{sample_id}_R2.clean.fastq.gz") if paired else None
+    clean_r1 = clean_dir / f"{sample_id}_1.clean.fastq.gz"
+    clean_r2 = (clean_dir / f"{sample_id}_2.clean.fastq.gz") if paired else None
     bbduk_log = clean_dir / f"{sample_id}.bbduk.log.txt"
 
     # STAR writes files under prefix; final BAM is {prefix}Aligned.sortedByCoord.out.bam
@@ -285,8 +284,8 @@ def build_fastq_urls_from_base(
     sra_id: str,
     paired: bool,
     *,
-    paired_suffix_r1: str = "_R1.fastq.gz",
-    paired_suffix_r2: str = "_R2.fastq.gz",
+    paired_suffix_r1: str = "_1.fastq.gz",
+    paired_suffix_r2: str = "_2.fastq.gz",
     single_suffix: str = ".fastq.gz",
 ) -> tuple[str, Optional[str]]:
     """
@@ -295,8 +294,8 @@ def build_fastq_urls_from_base(
       sra_id='SRR010101'
 
     Returns:
-      R1='https://my.server.com/data/SRR010101_R1.fastq.gz'
-      R2='https://my.server.com/data/SRR010101_R2.fastq.gz'  (if paired)
+      R1='https://my.server.com/data/SRR010101_1.fastq.gz'
+      R2='https://my.server.com/data/SRR010101_2.fastq.gz'  (if paired)
 
     Uses urljoin to avoid double slashes issues.
     """
@@ -387,14 +386,24 @@ def download_from_sra(sra_id: str, paths: SamplePaths, threads: int, force: bool
                 shutil.copyfileobj(f_in, f_out)
 
     if fq1.exists():
+        # SRA produced split files (_1, _2). Treat as paired in source.
         compress_move(fq1, paths.raw_r1)
-        if fq2.exists() and paths.raw_r2:
+
+        if paths.raw_r2 is not None:
+            # User requested paired: require fq2
+            if not fq2.exists():
+                raise RuntimeError("Requested paired-end (--paired) but SRA did not produce _2.fastq.")
             compress_move(fq2, paths.raw_r2)
-        elif fq2.exists() and not paths.raw_r2:
-            # If user marked sample as single-end but SRA produced paired, keep paired anyway
-            raise RuntimeError("SRA produced paired reads but pipeline is configured as single-end.")
+        else:
+            # User requested single-end: ignore fq2 if present
+            pass
+
     elif fq_single.exists():
+        # SRA produced a single fastq
+        if paths.raw_r2 is not None:
+            raise RuntimeError("Requested paired-end (--paired) but SRA produced single-end FASTQ.")
         compress_move(fq_single, paths.raw_r1)
+
     else:
         raise RuntimeError(f"Could not find fasterq-dump outputs in {tmp_fq}")
 
@@ -670,9 +679,9 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--download-mode", choices=["sra", "url"], required=True, help="Download from SRA Toolkit or from direct URLs.")
     ap.add_argument("--url-base", default=None,
                     help="Base URL (directory/prefix) where FASTQs live, e.g. 'https://my.server.com/data/'. "
-                    "The script will append <SRA>_R1.fastq.gz (and _R2 if paired).")
+                    "The script will append <SRA>_1.fastq.gz (and _2 if paired).")
     ap.add_argument("--paired", action="store_true",
-                    help="If set, download paired-end: <SRA>_R1.fastq.gz and <SRA>_R2.fastq.gz. "
+                    help="If set, download paired-end: <SRA>_1.fastq.gz and <SRA>_2.fastq.gz. "
                     "Otherwise download single-end: <SRA>.fastq.gz (or customize in code).")
     ap.add_argument("--url-user", default=None, help="Username for basic auth (optional).")
     ap.add_argument("--url-pass", default=None, help="Password for basic auth (optional).")
@@ -698,11 +707,7 @@ def main() -> None:
 
     sample_id = args.sra
 
-    # Determine pairedness:
-    # - URL mode: paired if url_r2 provided
-    # - SRA mode: user can still force single-end by not providing url_r2 doesn't apply;
-    #   here we infer pairedness only for path layout; fasterq-dump will tell us.
-    paired = bool(args.url_r2) if args.download_mode == "url" else True  # default layout as paired for SRA
+    paired = args.paired
     paths = build_paths(sample_id, args.outdir, paired=paired)
 
     # 1) Download
@@ -715,7 +720,7 @@ def main() -> None:
         download_from_url_base(
             url_base=args.url_base,
             sra_id=sample_id,
-            paired=args.paired,
+            paired=paired,
             paths=paths,
             force=args.force,
             user=args.url_user,
@@ -725,12 +730,6 @@ def main() -> None:
         # For SRA: we don't know single/paired until fasterq-dump runs.
         # To avoid mismatch, we try paired layout first; if it turns out single-end, we'll just produce raw_r1.
         download_from_sra(sample_id, paths, threads=args.threads, force=args.force)
-
-        # If paired layout but only R1 exists, switch to single-end paths going forward
-        if paths.raw_r2 and not paths.raw_r2.exists():
-            paths = build_paths(sample_id, args.outdir, paired=False)
-            # Keep marker consistent (already created)
-            touch(paths.mk_download)
 
     # 2) BBDuk (delete raw afterwards unless keep-raw)
     run_bbduk(
