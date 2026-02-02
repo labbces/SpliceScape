@@ -681,10 +681,10 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--threads", type=int, default=8, help="Threads for tools that support it.")
 
     ap.add_argument("--adapters", required=True, type=Path, help="FASTA of adapters/contaminants for BBDuk ref=...")
-    ap.add_argument("--star-index", required=True, type=Path, help="STAR genome index directory.")
+    # ap.add_argument("--star-index", required=True, type=Path, help="STAR genome index directory.")
 
-    ap.add_argument("--gtf", required=True, type=Path, help="Annotation GTF used by MAJIQ and SGSeq.")
-    ap.add_argument("--majiq-config", required=True, type=Path, help="MAJIQ config ini (your existing working config).")
+    # ap.add_argument("--gtf", required=True, type=Path, help="Annotation GTF used by MAJIQ and SGSeq.")
+    # ap.add_argument("--majiq-config", required=True, type=Path, help="MAJIQ config ini (your existing working config).")
 
     ap.add_argument("--force", action="store_true", help="Force rerun steps even if markers exist.")
     ap.add_argument("--keep-raw", action="store_true", help="Do not delete raw fastq.gz after BBDuk.")
