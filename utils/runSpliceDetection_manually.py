@@ -51,10 +51,46 @@ from urllib.parse import urljoin
 import urllib.request
 from urllib.error import URLError, HTTPError
 
+LOG_LEVEL: int = 1
+
 # ---------------------------
 # Helpers
 # ---------------------------
 
+def set_log_level(level: int) -> None:
+    """Ajusta o nível global de log. Use 1=INFO, 2=WARN, 3=DEBUG."""
+    global LOG_LEVEL
+    try:
+        LOG_LEVEL = int(level)
+    except Exception:
+        # ignore invalid values and keep previous level
+        pass
+
+
+def log(level: int, msg: str, *args) -> None:
+    """Imprime mensagens dependendo do nível atual de log.
+
+    Parâmetros:
+      level: 1 (INFO), 2 (WARN), 3 (DEBUG). Mensagens com level > LOG_LEVEL são ignoradas.
+      msg: string, pode conter formatação estilo printf se args forem fornecidos.
+    """
+    try:
+        if level > LOG_LEVEL:
+            return
+    except Exception:
+        # se LOG_LEVEL for inválido por algum motivo, recupera comportamento seguro
+        return
+
+    labels = {1: "INFO", 2: "WARN", 3: "DEBUG"}
+    label = labels.get(level, "INFO")
+    try:
+        message = msg % args if args else msg
+    except Exception:
+        # fallback simples se formatação falhar
+        message = "{}".format(msg) + (" " + " ".join(map(str, args)) if args else "")
+
+    print(f"[{label}] {message}", flush=True)
+    
 def ensure_dir(d: Path) -> None:
     d.mkdir(parents=True, exist_ok=True)
 
@@ -90,7 +126,7 @@ def run_cmd(
         ensure_dir(stdout_path.parent)
     if stderr_path:
         ensure_dir(stderr_path.parent)
-    print(cmd)
+    log(3, "run_cmd cmd: %s", cmd)
     stdout_handle = open(stdout_path, "wb") if stdout_path else None
     stderr_handle = open(stderr_path, "wb") if stderr_path else None
     try:
