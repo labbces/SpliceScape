@@ -751,6 +751,7 @@ def build_or_reuse_star_index(
     log(1, "Building STAR index in: %s", idx_dir)
 
     #TODO: If the overhang changes index must be recreated. So, index name should have the overhang string
+    #TODO: Compute the overhang from the allowed min_legth of reads minus one. Also min_length should 80% of the original length, get the original length from the CLI and remove min_length from CLI
     cmd = [
         "STAR",
         "--runMode", "genomeGenerate",
