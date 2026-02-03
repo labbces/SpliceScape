@@ -50,6 +50,8 @@ from typing import Optional, Sequence
 from urllib.parse import urljoin
 import urllib.request
 from urllib.error import URLError, HTTPError
+import json
+import time
 
 LOG_LEVEL: int = 1
 
@@ -90,7 +92,36 @@ def log(level: int, msg: str, *args) -> None:
         message = "{}".format(msg) + (" " + " ".join(map(str, args)) if args else "")
 
     print(f"[{label}] {message}", flush=True)
-    
+
+def star_index_dir(outdir: Path, species: str) -> Path:
+    """
+    Shared STAR index directory, species-specific.
+    Example: <outdir>/STAR_index_hs
+    """
+    safe = species.strip().lower()
+    if not safe.isalnum():
+        raise RuntimeError(f"Invalid species abbreviation: {species}")
+    return outdir / f"STAR_index_{safe}"
+
+def star_index_marker(idx_dir: Path) -> Path:
+    return idx_dir / ".star_index.done"
+
+def star_index_meta(idx_dir: Path) -> Path:
+    return idx_dir / ".star_index.meta.json"
+
+def file_fingerprint(path: Path) -> dict:
+    """
+    Fast fingerprint (no hashing): size + mtime + resolved path.
+    Good enough to detect most mismatches without expensive hashing.
+    """
+    st = path.stat()
+    return {
+        "path": str(path.resolve()),
+        "size": int(st.st_size),
+        "mtime": float(st.st_mtime),
+    }
+
+
 def ensure_dir(d: Path) -> None:
     d.mkdir(parents=True, exist_ok=True)
 
@@ -210,7 +241,7 @@ class SamplePaths:
     mk_majiq: Path
     mk_sgseq: Path
 
-def build_paths(sample_id: str, out_dir: Path, paired: bool) -> SamplePaths:
+def build_paths(sample_id: str, out_dir: Path, paired: bool, species: str) -> SamplePaths:
     work = out_dir / sample_id
     ensure_dir(work)
 
@@ -231,9 +262,9 @@ def build_paths(sample_id: str, out_dir: Path, paired: bool) -> SamplePaths:
     clean_r2 = (clean_dir / f"{sample_id}.trimmed.R2.fastq.gz") if paired else None
     bbduk_log = clean_dir / f"{sample_id}.bbduk.log.txt"
 
-    # STAR writes files under prefix; final BAM is {prefix}Aligned.sortedByCoord.out.bam
-    star_prefix = f"{sample_id}."
-    star_log = star_dir / f"{sample_id}.STAR.log.txt"
+    # STAR writes files under prefix; final BAM is {prefix}.Aligned.sortedByCoord.out.bam
+    star_prefix = f"{species.lower()}_{sample_id}."
+    star_log = star_dir / f"{species.lower()}_{sample_id}.STAR.log.txt"
     bam = star_dir / f"{star_prefix}Aligned.sortedByCoord.out.bam"
 
     majiq_log = majiq_dir / f"{sample_id}.majiq.log.txt"
@@ -518,6 +549,113 @@ def run_bbduk(
 # Step 3: STAR (and delete cleaned fastqs after BAM OK)
 # ---------------------------
 
+def build_or_reuse_star_index(
+    *,
+    outdir: Path,
+    species: str,
+    genome_fasta: Path,
+    annotation: Path,
+    threads: int,
+    sjdb_overhang: int,
+    force: bool,
+    extra_args: Optional[list[str]] = None,
+) -> Path:
+    """
+    Shared STAR index living under outdir/subdir.
+
+    Reuse if:
+      - .star_index.done exists
+      - genomeParameters.txt exists
+      - meta matches (genome, annotation, sjdbOverhang, STAR version, extra_args)
+
+    Otherwise rebuild in-place.
+    """
+    which_or_die("STAR")
+
+    if not file_ok(genome_fasta, 10):
+        raise RuntimeError(f"Genome FASTA not found/empty: {genome_fasta}")
+    if not file_ok(annotation, 10):
+        raise RuntimeError(f"Annotation not found/empty: {annotation}")
+
+    idx_dir = star_index_dir(outdir, species)
+    ensure_dir(idx_dir)
+
+    marker = star_index_marker(idx_dir)
+    meta_path = star_index_meta(idx_dir)
+    genome_params = idx_dir / "genomeParameters.txt"
+    idx_log = idx_dir / "STAR.genomeGenerate.log.txt"
+
+    # STAR version (best-effort)
+    star_ver = None
+    try:
+        cp = subprocess.run(["STAR", "--version"], capture_output=True, text=True)
+        if cp.returncode == 0:
+            star_ver = (cp.stdout.strip() or cp.stderr.strip() or None)
+    except Exception:
+        pass
+
+    desired = {
+        "species": species.lower(),
+        "genome_fasta": file_fingerprint(genome_fasta),
+        "annotation": file_fingerprint(annotation),
+        "sjdb_overhang": int(sjdb_overhang),
+        "extra_args": extra_args or [],
+        "star_version": star_ver,
+    }
+
+    # Reuse if ok
+    if not force and file_ok(marker, 2) and file_ok(genome_params, 10) and file_ok(meta_path, 10):
+        try:
+            existing = json.loads(meta_path.read_text())
+        except Exception:
+            existing = {}
+
+        mismatches = []
+        for k in ("species", "genome_fasta", "annotation", "sjdb_overhang", "extra_args", "star_version"):
+            if existing.get(k) != desired.get(k):
+                mismatches.append(k)
+
+        if not mismatches:
+            log(1, "Reusing STAR index: %s", idx_dir)
+            return idx_dir
+
+        raise RuntimeError(
+            "STAR index exists but does not match current inputs/params. "
+            f"Mismatched: {', '.join(mismatches)}. "
+            "Use a different --outdir / --star-index-subdir or rerun with --force."
+        )
+
+    # If marker/meta missing or incomplete index, rebuild
+    if not force and file_ok(marker, 2) and not file_ok(genome_params, 10):
+        log(2, "STAR index marker exists but genomeParameters.txt is missing/empty. Rebuilding: %s", idx_dir)
+
+    log(1, "Building STAR index in: %s", idx_dir)
+
+    cmd = [
+        "STAR",
+        "--runMode", "genomeGenerate",
+        "--runThreadN", str(threads),
+        "--genomeDir", str(idx_dir),
+        "--genomeFastaFiles", str(genome_fasta),
+        "--sjdbGTFfile", str(annotation),
+        "--sjdbOverhang", str(sjdb_overhang),
+    ]
+    if extra_args:
+        cmd.extend(extra_args)
+
+    run_cmd(cmd, stdout_path=idx_log, stderr_path=idx_log, check=True)
+
+    if not file_ok(genome_params, 10):
+        raise RuntimeError(f"STAR index generation finished but missing/empty: {genome_params}")
+
+    # Write meta + marker
+    meta_path.write_text(json.dumps(desired, indent=2) + "\n")
+    touch(marker)
+
+    log(1, "STAR index ready: %s", idx_dir)
+    return idx_dir
+
+
 def run_star(
     paths: SamplePaths,
     star_index_dir: Path,
@@ -546,8 +684,9 @@ def run_star(
         "--readFilesCommand", "zcat",
         "--outFileNamePrefix", str(paths.star_dir / paths.star_prefix),
         "--outSAMtype", "BAM", "SortedByCoordinate",
-        "--outSAMattributes", "NH", "HI", "AS", "NM", "MD",
+        "--outSAMstrandField", "intronMotif",
         "--limitBAMsortRAM", "0",
+        "--twopassMode", "Basic",
     ]
     if extra_args:
         cmd.extend(extra_args)
@@ -727,10 +866,13 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--threads", type=int, default=8, help="Threads for tools that support it.")
 
     ap.add_argument("--adapters", required=True, type=Path, help="FASTA of adapters/contaminants for BBDuk ref=...")
-    # ap.add_argument("--star-index", required=True, type=Path, help="STAR genome index directory.")
+    ap.add_argument("--genome-fasta", required=True, type=Path, help="Genome FASTA used to build STAR index.")
 
-    # ap.add_argument("--gtf", required=True, type=Path, help="Annotation GTF used by MAJIQ and SGSeq.")
-    # ap.add_argument("--majiq-config", required=True, type=Path, help="MAJIQ config ini (your existing working config).")
+    ap.add_argument("--annotation", required=True, type=Path, help="Annotation file (GTF preferred; GFF3 also supported by STAR in many cases).")    # ap.add_argument("--majiq-config", required=True, type=Path, help="MAJIQ config ini (your existing working config).")
+
+    ap.add_argument("--sjdb-overhang", type=int, default=149, help="STAR sjdbOverhang (usually readLength-1). Default 149 for 150bp reads.")
+
+    ap.add_argument("--species", required=True, help="Species abbreviation used to name the shared STAR index (e.g. hs, mm, ath, zm).")
 
     ap.add_argument("--force", action="store_true", help="Force rerun steps even if markers exist.")
     ap.add_argument("--keep-raw", action="store_true", help="Do not delete raw fastq.gz after BBDuk.")
@@ -745,14 +887,12 @@ def main() -> None:
     sample_id = args.sra
 
     paired = args.paired
-    paths = build_paths(sample_id, args.outdir, paired=paired)
+    paths = build_paths(sample_id, args.outdir, paired=paired, species=args.species)
 
     # 1) Download
     if args.download_mode == "url":
         if not args.url_base:
             raise RuntimeError("In URL mode you must provide --url-base, e.g. https://my.server.com/data/")
-
-        paths = build_paths(sample_id, args.outdir, paired=args.paired)
 
         download_from_url_base(
             url_base=args.url_base,
@@ -778,9 +918,19 @@ def main() -> None:
     )
 
     # 3) STAR (delete cleaned afterwards unless keep-clean)
+    idx_dir = build_or_reuse_star_index(
+        outdir=args.outdir,
+        species=args.species,
+        genome_fasta=args.genome_fasta,
+        annotation=args.annotation,
+        threads=args.threads,
+        sjdb_overhang=args.sjdb_overhang,
+        force=args.force,
+    )
+
     run_star(
         paths,
-        star_index_dir=args.star_index,
+        star_index_dir=idx_dir,
         threads=args.threads,
         force=args.force,
         delete_clean=(not args.keep_clean),
