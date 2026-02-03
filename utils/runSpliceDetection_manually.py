@@ -227,8 +227,8 @@ def build_paths(sample_id: str, out_dir: Path, paired: bool) -> SamplePaths:
     raw_r1 = raw_dir / f"{sample_id}_1.fastq.gz"
     raw_r2 = (raw_dir / f"{sample_id}_2.fastq.gz") if paired else None
 
-    clean_r1 = clean_dir / f"{sample_id}_1.clean.fastq.gz"
-    clean_r2 = (clean_dir / f"{sample_id}_2.clean.fastq.gz") if paired else None
+    clean_r1 = clean_dir / f"{sample_id}.trimmed.R1.fastq.gz"
+    clean_r2 = (clean_dir / f"{sample_id}.trimmed.R2.fastq.gz") if paired else None
     bbduk_log = clean_dir / f"{sample_id}.bbduk.log.txt"
 
     # STAR writes files under prefix; final BAM is {prefix}Aligned.sortedByCoord.out.bam
@@ -482,14 +482,15 @@ def run_bbduk(
         f"ref={adapters_fa}",
         "ktrim=r",
         "k=23",
+        "trimpolya=10",
+        "minlen=25",
         "mink=11",
         "hdist=1",
         "qtrim=rl",
         "trimq=10",
-        "maq=10",
-        "tpe=t",
         "tbo=t",
         f"threads={threads}",
+        "showspeed=t",
     ]
     if paths.raw_r2 and paths.clean_r2:
         cmd.extend([f"in2={paths.raw_r2}", f"out2={paths.clean_r2}"])
