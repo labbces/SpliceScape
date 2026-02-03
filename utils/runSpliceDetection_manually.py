@@ -52,6 +52,8 @@ import urllib.request
 from urllib.error import URLError, HTTPError
 import json
 import time
+import os
+import math
 
 LOG_LEVEL: int = 1
 
@@ -93,6 +95,73 @@ def log(level: int, msg: str, *args) -> None:
 
     print(f"[{label}] {message}", flush=True)
 
+def genome_length_from_fai(fai: Path) -> int:
+    """
+    Soma o comprimento total do genoma a partir do arquivo .fai
+    """
+    if not fai.exists():
+        raise RuntimeError(f"FAI não encontrado: {fai}")
+
+    total = 0
+    with open(fai, "rt") as fh:
+        for line in fh:
+            if not line.strip():
+                continue
+            total += int(line.split("\t")[1])
+    return total
+
+def compute_genomeSAindexNbases(genome_length: int) -> int:
+    """
+    Calcula genomeSAindexNbases seguindo a recomendação do STAR
+    """
+    nb = int(math.floor(math.log2(genome_length) / 2 - 1))
+    return max(1, min(14, nb))
+
+def is_gzip_file(path: Path) -> bool:
+    # Checagem barata pelo magic number do gzip
+    try:
+        with open(path, "rb") as fh:
+            return fh.read(2) == b"\x1f\x8b"
+    except FileNotFoundError:
+        return False
+
+def ensure_fasta_uncompressed_and_fai(
+    genome_fasta: Path,
+    *,
+    work_dir: Path,
+    force: bool = False,
+) -> Path:
+    """
+    Garante que o FASTA está descomprimido e tem .fai.
+    Se genome_fasta for .gz (gzip normal), descomprime para work_dir e indexa.
+    Retorna o caminho do FASTA que deve ser usado pelo STAR.
+    """
+    which_or_die("samtools")
+
+    if not genome_fasta.exists():
+        raise RuntimeError(f"Genome FASTA não encontrado: {genome_fasta}")
+
+    # Se for .gz, descomprimir para work_dir (evita STAR reclamar e evita faidx falhar)
+    fasta_for_star = genome_fasta
+    if genome_fasta.suffix == ".gz" or is_gzip_file(genome_fasta):
+        fasta_for_star = work_dir / genome_fasta.with_suffix("").name  # remove apenas ".gz"
+        if force or (not file_ok(fasta_for_star, 10)):
+            ensure_dir(work_dir)
+            log(1, "Descomprimindo FASTA gz -> %s", fasta_for_star)
+            with gzip.open(genome_fasta, "rb") as fin, open(fasta_for_star, "wb") as fout:
+                shutil.copyfileobj(fin, fout)
+
+    # criar/validar .fai
+    fai = fasta_for_star.with_suffix(fasta_for_star.suffix + ".fai")  # genome.fa.fai
+    if force or (not file_ok(fai, 10)):
+        log(1, "Indexando FASTA com samtools faidx: %s", fasta_for_star)
+        run_cmd(["samtools", "faidx", str(fasta_for_star)])
+
+    if not file_ok(fai, 10):
+        raise RuntimeError(f"Falha ao gerar FASTA index (.fai): {fai}")
+
+    return fasta_for_star
+
 def star_index_dir(outdir: Path, species: str) -> Path:
     """
     Shared STAR index directory, species-specific.
@@ -130,6 +199,15 @@ def file_ok(p: Path, min_bytes: int = 1) -> bool:
         return p.is_file() and p.stat().st_size >= min_bytes
     except FileNotFoundError:
         return False
+
+def gtf_path(p: str) -> Path:
+    path = Path(p)
+    s = path.name.lower()
+    if not (s.endswith(".gtf") or s.endswith(".gtf.gz")):
+        raise argparse.ArgumentTypeError(
+            f"STAR annotation must be a GTF (.gtf or .gtf.gz). Got: {path}"
+        )
+    return path
 
 def safe_unlink(p: Optional[Path]) -> None:
     if not p:
@@ -201,6 +279,30 @@ def bam_ok(bam: Path) -> bool:
         return cp.returncode == 0
     return True
 
+def ensure_bam_index(bam: Path, threads: int = 1, force: bool = False) -> Path:
+    """
+    Gera o índice do BAM (.bai). Retorna o caminho do índice gerado.
+    """
+    which_or_die("samtools")
+
+    if not file_ok(bam, 1000):
+        raise RuntimeError(f"BAM não encontrado/pequeno demais para indexar: {bam}")
+
+    bai1 = bam.with_suffix(bam.suffix + ".bai")  # .bam.bai
+    bai2 = bam.with_suffix(".bai")               # .bai (alguns setups)
+    bai = bai1 if bai1.exists() else bai2
+
+    if (not force) and (file_ok(bai1, 10) or file_ok(bai2, 10)):
+        return bai1 if bai1.exists() else bai2
+
+    log(1, "Indexando BAM com samtools index: %s", bam)
+    # -@ threads funciona no samtools index em versões recentes
+    run_cmd(["samtools", "index", "-@", str(max(1, threads)), str(bam)])
+
+    if not (file_ok(bai1, 10) or file_ok(bai2, 10)):
+        raise RuntimeError(f"Falha ao criar índice do BAM: {bam}")
+
+    return bai1 if bai1.exists() else bai2
 
 # ---------------------------
 # Paths
@@ -585,6 +687,21 @@ def build_or_reuse_star_index(
     genome_params = idx_dir / "genomeParameters.txt"
     idx_log = idx_dir / "STAR.genomeGenerate.log.txt"
 
+    genome_fasta_for_star = ensure_fasta_uncompressed_and_fai(
+        genome_fasta,
+        work_dir=idx_dir,
+        force=force,
+    )
+
+    fai = genome_fasta_for_star.with_suffix(
+       genome_fasta_for_star.suffix + ".fai"
+    )
+
+    genome_len = genome_length_from_fai(fai)
+    genomeSAindexNbases = compute_genomeSAindexNbases(genome_len)
+
+    log(1, "Genome length=%d bp → genomeSAindexNbases=%d", genome_len, genomeSAindexNbases,
+)
     # STAR version (best-effort)
     star_ver = None
     try:
@@ -601,6 +718,8 @@ def build_or_reuse_star_index(
         "sjdb_overhang": int(sjdb_overhang),
         "extra_args": extra_args or [],
         "star_version": star_ver,
+        "genome_length": genome_len,
+        "genomeSAindexNbases": genomeSAindexNbases,
     }
 
     # Reuse if ok
@@ -611,7 +730,7 @@ def build_or_reuse_star_index(
             existing = {}
 
         mismatches = []
-        for k in ("species", "genome_fasta", "annotation", "sjdb_overhang", "extra_args", "star_version"):
+        for k in ("species", "genome_fasta", "annotation", "sjdb_overhang", "extra_args", "star_version", "genomeSAindexNbases"):
             if existing.get(k) != desired.get(k):
                 mismatches.append(k)
 
@@ -631,15 +750,19 @@ def build_or_reuse_star_index(
 
     log(1, "Building STAR index in: %s", idx_dir)
 
+    #TODO: If the overhang changes index must be recreated. So, index name should have the overhang string
     cmd = [
         "STAR",
         "--runMode", "genomeGenerate",
         "--runThreadN", str(threads),
         "--genomeDir", str(idx_dir),
-        "--genomeFastaFiles", str(genome_fasta),
+        "--genomeFastaFiles", str(genome_fasta_for_star),
         "--sjdbGTFfile", str(annotation),
         "--sjdbOverhang", str(sjdb_overhang),
+        "--genomeSAindexNbases", str(genomeSAindexNbases),
     ]
+
+
     if extra_args:
         cmd.extend(extra_args)
 
@@ -696,6 +819,9 @@ def run_star(
     # validate BAM
     if not bam_ok(paths.bam):
         raise RuntimeError(f"STAR produced BAM that failed validation: {paths.bam}")
+
+    # cria índice do BAM
+    ensure_bam_index(paths.bam, threads=threads, force=force)
 
     touch(paths.mk_star)
 
@@ -868,7 +994,8 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--adapters", required=True, type=Path, help="FASTA of adapters/contaminants for BBDuk ref=...")
     ap.add_argument("--genome-fasta", required=True, type=Path, help="Genome FASTA used to build STAR index.")
 
-    ap.add_argument("--annotation", required=True, type=Path, help="Annotation file (GTF preferred; GFF3 also supported by STAR in many cases).")    # ap.add_argument("--majiq-config", required=True, type=Path, help="MAJIQ config ini (your existing working config).")
+    ap.add_argument("--annotation", required=True, type=gtf_path, help="Annotation GTF for STAR genomeGenerate (.gtf or .gtf.gz only).")
+    # ap.add_argument("--majiq-config", required=True, type=Path, help="MAJIQ config ini (your existing working config).")
 
     ap.add_argument("--sjdb-overhang", type=int, default=149, help="STAR sjdbOverhang (usually readLength-1). Default 149 for 150bp reads.")
 
