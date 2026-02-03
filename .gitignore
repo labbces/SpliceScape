@@ -5,3 +5,4 @@ merging_outputs/data
 merging_outputs/test*
 test
 submit_runManual.sh*
+Log.out
