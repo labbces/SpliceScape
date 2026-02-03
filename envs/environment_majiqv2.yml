@@ -23,6 +23,7 @@ dependencies:
   - star=2.7.11b
   - bbmap
   - htslib
+  - gffread
   - nextflow=25.04.8
 
   # --- R base ---
