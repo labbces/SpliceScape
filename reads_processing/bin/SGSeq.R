@@ -49,7 +49,7 @@ sample_info <- data.frame(
 bam <- getBamInfo(sample_info, yieldSize = NULL, cores = cores)
 
 # Analyze features e variants
-# TODO: In order to augment known features, predict must be TRUE in analyzeFeatures
+# TODO: In order to augment known features with de novo features, predict must be TRUE in analyzeFeatures
 analysis_features <- analyzeFeatures(bam, features = txFeatures, cores = cores)
 analysis_variants <- analyzeVariants(analysis_features, cores = cores)
 
