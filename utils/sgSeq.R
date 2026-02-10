@@ -1,174 +1,250 @@
-library("GenomicFeatures")
-library("SGSeq")
-library("txdbmaker")
+#!/usr/bin/env Rscript
 
+suppressPackageStartupMessages({
+  library(GenomicFeatures)
+  library(SGSeq)
+  library(txdbmaker)
+  library(GenomicRanges)
+})
+
+# -----------------------
+# User inputs
+# -----------------------
 sra_id <- "SRR12642286"
 bam_file_path <- "/Storage/data2/riano/testManualSpliceScape/SRR12642286/03_star/ath_SRR12642286.Aligned.sortedByCoord.out.bam"
-gtf_path<-"/Storage/data2/riano/data/Athaliana_447_Araport11.gene_exons.gtf"
+gtf_path <- "/Storage/data2/riano/data/Athaliana_447_Araport11.gene_exons.gtf"
 cores <- 30
 output_dir <- "/Storage/data2/riano/testManualSpliceScape/SRR12642286/05_sgseq/"
+
+dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
+
+# -----------------------
+# Helpers
+# -----------------------
+
+# Flatten list-like columns from mcols export
+flatten_mcols <- function(x) {
+  df <- as.data.frame(x)
+  df[] <- lapply(df, function(v) if (is.list(v)) vapply(v, toString, character(1)) else v)
+  df
+}
+
+# Parse "D:Chr5:26882759:-" or "A:Chr5:26882588:-" (vectorized)
+parse_DA_vec <- function(x) {
+  p <- strsplit(as.character(x), ":", fixed = TRUE)
+  data.frame(
+    tag    = vapply(p, `[[`, character(1), 1),   # "D" or "A"
+    chr    = vapply(p, `[[`, character(1), 2),
+    pos    = as.integer(vapply(p, `[[`, character(1), 3)),
+    strand = vapply(p, `[[`, character(1), 4),
+    stringsAsFactors = FALSE
+  )
+}
+
+# Build junction catalog from analysis_features
+make_Jdf <- function(analysis_features) {
+  gr <- granges(analysis_features)
+  J  <- gr[SGSeq::type(gr) == "J"]
+
+  Jdf <- data.frame(
+    seqnames  = as.character(seqnames(J)),
+    start     = start(J),
+    end       = end(J),
+    strand    = as.character(strand(J)),
+    featureID = SGSeq::featureID(J),
+    stringsAsFactors = FALSE
+  )
+  stopifnot("featureID" %in% colnames(Jdf), nrow(Jdf) > 0)
+
+  Jdf$key <- paste(Jdf$seqnames, Jdf$strand, Jdf$start, Jdf$end, sep = "|")
+  Jdf
+}
+
+# Generic: add junction coords + featureID by matching from/to against Jdf
+add_junction_match <- function(df, Jdf, prefix = "junc") {
+  pf <- parse_DA_vec(df$from) # donor
+  pt <- parse_DA_vec(df$to)   # acceptor
+
+  js <- pmin(pf$pos, pt$pos)
+  je <- pmax(pf$pos, pt$pos)
+
+  k <- paste(pf$chr, pf$strand, js, je, sep = "|")
+  idx <- match(k, Jdf$key)
+
+  df[[paste0(prefix, "_start")]] <- js
+  df[[paste0(prefix, "_end")]]   <- je
+  df[[paste0(prefix, "_featureID")]] <- ifelse(is.na(idx), NA_integer_, Jdf$featureID[idx])
+
+  df
+}
+
+# A5SS-specific: choose distal/prox junction within each event
+add_A5SS_junctions <- function(df_A5SS, Jdf) {
+  df_A5SS$junc_start <- NA_integer_
+  df_A5SS$junc_end   <- NA_integer_
+
+  pf <- parse_DA_vec(df_A5SS$from)
+  pt <- parse_DA_vec(df_A5SS$to)
+
+  key_vec <- paste(df_A5SS$geneID, df_A5SS$eventID, sep = "_")
+  keys <- unique(key_vec)
+
+  for (k in keys) {
+    rows <- which(key_vec == k)
+    if (!length(rows)) next
+
+    chr <- pf$chr[rows[1]]
+    strand_ev <- pf$strand[rows[1]]
+    acc <- pt$pos[rows[1]]
+
+    if (strand_ev == "+") {
+      # acceptor fixed at end; donor varies at start
+      cand <- Jdf[Jdf$seqnames == chr & Jdf$strand == strand_ev & Jdf$end == acc, , drop = FALSE]
+      if (nrow(cand) < 1) next
+      j_dist <- cand[which.min(cand$start), , drop = FALSE]  # distal = smaller donor coord
+      j_prox <- cand[which.max(cand$start), , drop = FALSE]  # proximal = larger donor coord
+    } else {
+      # strand '-' : acceptor fixed at start; donor varies at end
+      cand <- Jdf[Jdf$seqnames == chr & Jdf$strand == strand_ev & Jdf$start == acc, , drop = FALSE]
+      if (nrow(cand) < 1) next
+      j_dist <- cand[which.max(cand$end), , drop = FALSE]    # distal = larger donor coord
+      j_prox <- cand[which.min(cand$end), , drop = FALSE]    # proximal = smaller donor coord
+    }
+
+    for (r in rows) {
+      sel <- if (df_A5SS$variantType[r] == "A5SS:D") j_dist else j_prox
+      df_A5SS$junc_start[r] <- sel$start
+      df_A5SS$junc_end[r]   <- sel$end
+    }
+  }
+
+  df_A5SS
+}
+
+# Safely pull a sample column from an assay matrix-like object
+get_sample_vec <- function(assay_obj, sample_name) {
+  if (is.null(assay_obj)) return(NULL)
+  m <- assay_obj
+  # m can be matrix, dgCMatrix, DelayedArray, etc.
+  if (!is.null(dim(m))) {
+    cn <- colnames(m)
+    if (!is.null(cn) && sample_name %in% cn) {
+      return(as.numeric(m[, sample_name]))
+    }
+    # single-sample case with no colnames
+    if (ncol(m) == 1) {
+      return(as.numeric(m[, 1]))
+    }
+  }
+  NULL
+}
+
+# -----------------------
+# Build TxDb / TxFeatures
+# -----------------------
 txdb <- txdbmaker::makeTxDbFromGFF(gtf_path, format = "gtf")
 txFeatures <- convertToTxFeatures(txdb)
 
-# --- Sample info
+# -----------------------
+# Sample info + BAM
+# -----------------------
 si <- data.frame(
   sample_name = sra_id,
   file_bam    = bam_file_path,
   stringsAsFactors = FALSE
 )
-# Column type for an SGFeatures object takes values
-# J (splice junction)
-# E (disjoint exon bin)
-# D (splice donor site)
-# A (splice acceptor site)
 
 bam <- getBamInfo(si, yieldSize = NULL, cores = cores)
-# --- Analyzing features and variants
 
-# 
+# -----------------------
+# SGSeq analysis
+# -----------------------
 analysis_features <- analyzeFeatures(
   bam,
-  features = txFeatures,   # usa anotação
-  annotation = txFeatures, # usa anotação
-  predict  = TRUE,         # adiciona de novo
+  annotation = txFeatures,
+  predict  = TRUE,
   cores    = cores
 )
+
 analysis_variants <- analyzeVariants(
-    analysis_features,
-    cores = cores
+  analysis_features,
+  cores = cores
 )
 
-
-# --- junction catalog from SGFeatures (analysis_features)
-gr <- granges(analysis_features)
-J  <- gr[SGSeq::type(gr) == "J"]
-
-Jdf <- data.frame(
-  seqnames  = as.character(seqnames(J)),
-  start     = start(J),   # genomic start (always < end)
-  end       = end(J),     # genomic end
-  strand    = as.character(strand(J)),
-  featureID = SGSeq::featureID(J),
-  stringsAsFactors = FALSE
-)
-
-#Check that we have data in Jdf
-stopifnot("featureID" %in% colnames(Jdf))
-stopifnot(nrow(Jdf) > 0)
-
-# --- parse helpers for "D:Chr5:26882759:-" and "A:Chr5:26882588:-"
-parse_from <- function(x) {
-  p <- strsplit(x, ":", fixed = TRUE)[[1]]
-  list(chr = p[2], pos = as.integer(p[3]), strand = p[4])
-}
-parse_to <- function(x) {
-  p <- strsplit(x, ":", fixed = TRUE)[[1]]
-  list(pos = as.integer(p[3]))
-}
-
-flat_mcols <- as.data.frame(mcols(analysis_variants))
-flat_mcols[] <- lapply(flat_mcols, function(x) if (is.list(x)) sapply(x, toString) else x)
-
-
-###Selecting only A5SS events and assigning junction coordinates
-
-flat_mcols_A5SS <- flat_mcols[flat_mcols$variantType %in% c("A5SS:D","A5SS:P"), ]
-# --- output columns
-flat_mcols_A5SS$junc_start <- NA_integer_
-flat_mcols_A5SS$junc_end   <- NA_integer_
-
-# --- per-event processing
-key_vec <- paste(flat_mcols_A5SS$geneID, flat_mcols_A5SS$eventID, sep = "_")
-keys <- unique(key_vec)
-
-for (k in keys) {
-  rows <- which(key_vec == k)
-  if (length(rows) == 0) next
-
-  # event metadata
-  f <- parse_from(flat_mcols_A5SS$from[rows[1]])
-  t <- parse_to(flat_mcols_A5SS$to[rows[1]])
-
-  chr        <- f$chr
-  acc        <- t$pos
-  strand_ev  <- f$strand
-
-  # pick candidate junctions + choose distal/prox correctly for strand
-  if (strand_ev == "+") {
-    # acceptor is at end; donor varies at start
-    cand <- Jdf[Jdf$seqnames == chr & Jdf$strand == strand_ev & Jdf$end == acc, , drop = FALSE]
-    if (nrow(cand) < 1) next
-
-    j_dist <- cand[which.min(cand$start), , drop = FALSE]  # distal = smaller donor coord
-    j_prox <- cand[which.max(cand$start), , drop = FALSE]  # proximal = larger donor coord
-
-  } else {
-    # strand '-' : acceptor is at start; donor varies at end
-    cand <- Jdf[Jdf$seqnames == chr & Jdf$strand == strand_ev & Jdf$start == acc, , drop = FALSE]
-    if (nrow(cand) < 1) next
-
-    # distal/prox in transcript sense: distal corresponds to larger genomic donor coord on '-'
-    j_dist <- cand[which.max(cand$end), , drop = FALSE]
-    j_prox <- cand[which.min(cand$end), , drop = FALSE]
-  }
-
-  # assign one junction per variant
-  for (r in rows) {
-    vt <- flat_mcols_A5SS$variantType[r]
-    sel <- if (vt == "A5SS:D") j_dist else j_prox
-    flat_mcols_A5SS$junc_start[r] <- sel$start
-    flat_mcols_A5SS$junc_end[r]   <- sel$end
-  }
-}
-
-# --- result (inspect)
-flat_mcols_A5SS[, c("geneName","eventID","variantType","from","to","junc_start","junc_end")]
-
-
-###Selecting only RI events and assigning junction coordinates
-#TODO: Check 
-# RI:E (spliced) are events with removed introns, splicing happened.
-#  the coordinates should be the last/first nucleotide of the exon
-# RI:R (retained intron) are the retained introns and
-#  the coordinates should be first/last nucleotide of the intron 
-flat_mcols_RI <- flat_mcols[flat_mcols$variantType %in% c("RI:E","RI:R"), ]
-
-# parse from/to com strsplit (sem regex)
-parse_from_vec <- function(x) {
-  p <- strsplit(as.character(x), ":", fixed=TRUE)
-  chr <- vapply(p, `[[`, character(1), 2)
-  pos <- as.integer(vapply(p, `[[`, character(1), 3))
-  str <- vapply(p, `[[`, character(1), 4)
-  data.frame(chr=chr, D=pos, strand=str, stringsAsFactors=FALSE)
-}
-parse_to_vec <- function(x) {
-  p <- strsplit(as.character(x), ":", fixed=TRUE)
-  pos <- as.integer(vapply(p, `[[`, character(1), 3))
-  data.frame(A=pos, stringsAsFactors=FALSE)
-}
-
-pf <- parse_from_vec(flat_mcols_RI$from)
-pt <- parse_to_vec(flat_mcols_RI$to)
-
-# 4) calcular junction coords (start<end sempre)
-flat_mcols_RI$ri_junc_start <- pmin(pf$D, pt$A)
-flat_mcols_RI$ri_junc_end   <- pmax(pf$D, pt$A)
-
-# 5) match por chave
-Jdf$key <- paste(Jdf$seqnames, Jdf$strand, Jdf$start, Jdf$end, sep="|")
-k <- paste(pf$chr, pf$strand, flat_mcols_RI$ri_junc_start, flat_mcols_RI$ri_junc_end, sep="|")
-
-idx <- match(k, Jdf$key)
-flat_mcols_RI$ri_junc_featureID <- ifelse(is.na(idx), NA_integer_, Jdf$featureID[idx])
-
-# 6) diagnóstico rápido
-cat("RI rows:", nrow(flat_mcols_RI), "\n")
-cat("Matched featureID:", sum(!is.na(flat_mcols_RI$ri_junc_featureID)), "\n")
-
-# veja alguns exemplos que bateram / não bateram
-head(flat_mcols_RI[, c("from","to","ri_junc_start","ri_junc_end","ri_junc_featureID")], 10)
-head(flat_mcols_RI[is.na(flat_mcols_RI$ri_junc_featureID),
-                   c("from","to","ri_junc_start","ri_junc_end")], 10)
-
-
+# Save features object
 saveRDS(analysis_features, file = file.path(output_dir, "sgseq_features.rds"))
+saveRDS(analysis_variants, file = file.path(output_dir, "sgseq_variants.rds"))
+
+
+# -----------------------
+# Build junction catalog + export mcols
+# -----------------------
+Jdf <- make_Jdf(analysis_features)
+
+flat_mcols <- flatten_mcols(mcols(analysis_variants))
+
+# pull assays
+quant <- assays(analysis_variants)
+
+flat_mcols$countsVariant5p <- get_sample_vec(quant$countsVariant5p, sra_id) # supporting reads for 5' choice (donor side)
+flat_mcols$countsVariant3p <- get_sample_vec(quant$countsVariant3p, sra_id) # supporting reads for 3' choice (acceptor side)
+flat_mcols$countsEvent5p   <- get_sample_vec(quant$countsEvent5p,   sra_id) # total reads for event (5' side)
+flat_mcols$countsEvent3p   <- get_sample_vec(quant$countsEvent3p,   sra_id) # total reads for event (3' side)
+flat_mcols$PSI             <- get_sample_vec(quant$variantFreq,     sra_id) # PSI / variant frequency
+
+# sanity checks
+stopifnot(nrow(flat_mcols) == length(flat_mcols$PSI))
+head(flat_mcols[, c("variantType","variantName","countsVariant5p","countsEvent5p","countsVariant3p","countsEvent3p","PSI")])
+
+# -----------------------
+# A5SS: junction coords
+# -----------------------
+flat_mcols_A5SS <- flat_mcols[flat_mcols$variantType %in% c("A5SS:D", "A5SS:P"), , drop = FALSE]
+flat_mcols_A5SS <- add_A5SS_junctions(flat_mcols_A5SS, Jdf)
+
+write.table(
+  flat_mcols_A5SS,
+  file = file.path(output_dir, "sgseq_variants_A5SS_with_junctions.tsv"),
+  sep = "\t", quote = FALSE, row.names = FALSE
+)
+
+# Quick inspect
+cat("A5SS rows:", nrow(flat_mcols_A5SS), "\n")
+cat("A5SS with coords:", sum(!is.na(flat_mcols_A5SS$junc_start) & !is.na(flat_mcols_A5SS$junc_end)), "\n")
+
+# -----------------------
+# RI: junction coords + featureID match
+# -----------------------
+flat_mcols_RI <- flat_mcols[flat_mcols$variantType %in% c("RI:E", "RI:R"), , drop = FALSE]
+flat_mcols_RI <- add_junction_match(flat_mcols_RI, Jdf, prefix = "ri_junc")
+
+# Optional: define "new exon" coords for RI:R as the intron interval (exonized intron)
+is_RIR <- flat_mcols_RI$variantType == "RI:R"
+flat_mcols_RI$new_exon_seqnames <- NA_character_
+flat_mcols_RI$new_exon_start    <- NA_integer_
+flat_mcols_RI$new_exon_end      <- NA_integer_
+flat_mcols_RI$new_exon_strand   <- NA_character_
+flat_mcols_RI$new_exon_type     <- NA_character_
+
+if (any(is_RIR)) {
+  pf_RI <- parse_DA_vec(flat_mcols_RI$from)
+  flat_mcols_RI$new_exon_seqnames[is_RIR] <- pf_RI$chr[is_RIR]
+  flat_mcols_RI$new_exon_strand[is_RIR]   <- pf_RI$strand[is_RIR]
+  flat_mcols_RI$new_exon_start[is_RIR]    <- pmin(flat_mcols_RI$ri_junc_start[is_RIR], flat_mcols_RI$ri_junc_end[is_RIR])
+  flat_mcols_RI$new_exon_end[is_RIR]      <- pmax(flat_mcols_RI$ri_junc_start[is_RIR], flat_mcols_RI$ri_junc_end[is_RIR])
+  flat_mcols_RI$new_exon_type[is_RIR]     <- "E_new"
+}
+
+write.table(
+  flat_mcols_RI,
+  file = file.path(output_dir, "sgseq_variants_RI_with_junctions.tsv"),
+  sep = "\t", quote = FALSE, row.names = FALSE
+)
+
+cat("RI rows:", nrow(flat_mcols_RI), "\n")
+cat("RI matched junction featureID:", sum(!is.na(flat_mcols_RI$ri_junc_featureID)), "\n")
+
+# -----------------------
+# Done
+# -----------------------
+cat("Outputs written to:", output_dir, "\n")
