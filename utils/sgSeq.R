@@ -18,6 +18,14 @@ output_dir <- "/Storage/data2/riano/testManualSpliceScape/SRR12642286/05_sgseq/"
 
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
+#Validate user inputs
+if (!file.exists(bam_file_path)) {
+  stop("BAM file not found: ", bam_file_path)
+}
+if (!file.exists(gtf_path)) {
+  stop("GTF file not found: ", gtf_path)
+}
+
 # -----------------------
 # Helpers
 # -----------------------
@@ -32,6 +40,12 @@ flatten_mcols <- function(x) {
 # Parse "D:Chr5:26882759:-" or "A:Chr5:26882588:-" (vectorized)
 parse_DA_vec <- function(x) {
   p <- strsplit(as.character(x), ":", fixed = TRUE)
+  # Validar número de campos
+  n_fields <- vapply(p, length, integer(1))
+  if (any(n_fields != 4)) {
+    warning("Some entries don't have 4 fields. Found: ", 
+            paste(unique(n_fields), collapse = ", "))
+  }
   data.frame(
     tag    = vapply(p, `[[`, character(1), 1),   # "D" or "A"
     chr    = vapply(p, `[[`, character(1), 2),
@@ -45,6 +59,10 @@ parse_DA_vec <- function(x) {
 make_Jdf <- function(analysis_features) {
   gr <- granges(analysis_features)
   J  <- gr[SGSeq::type(gr) == "J"]
+
+  if (length(J) == 0) {
+    stop("No junction features found in analysis_features")
+  }
 
   Jdf <- data.frame(
     seqnames  = as.character(seqnames(J)),
@@ -80,6 +98,10 @@ add_junction_match <- function(df, Jdf, prefix = "junc") {
 
 # A5SS-specific: choose distal/prox junction within each event
 add_A5SS_junctions <- function(df_A5SS, Jdf) {
+  if (nrow(df_A5SS) == 0) {
+    warning("No A5SS events to process")
+    return(df_A5SS)
+  }
   df_A5SS$junc_start <- NA_integer_
   df_A5SS$junc_end   <- NA_integer_
 
@@ -123,6 +145,10 @@ add_A5SS_junctions <- function(df_A5SS, Jdf) {
 
 # A3SS-specific: choose distal/prox junction within each event
 add_A3SS_junctions <- function(df_A3SS, Jdf) {
+  if (nrow(df_A3SS) == 0) {
+    warning("No A3SS events to process")
+    return(df_A3SS)
+  }
   df_A3SS$junc_start <- NA_integer_
   df_A3SS$junc_end   <- NA_integer_
 
@@ -171,7 +197,11 @@ add_A3SS_junctions <- function(df_A3SS, Jdf) {
 
 # Safely pull a sample column from an assay matrix-like object
 get_sample_vec <- function(assay_obj, sample_name) {
-  if (is.null(assay_obj)) return(NULL)
+  if (is.null(assay_obj)) {
+    warning("Assay object is NULL for sample: ", sample_name)
+    return(NULL)
+  }
+  
   m <- assay_obj
   # m can be matrix, dgCMatrix, DelayedArray, etc.
   if (!is.null(dim(m))) {
@@ -275,6 +305,7 @@ write.table(
 # Quick inspect
 cat("A3SS rows:", nrow(flat_mcols_A3SS), "\n")
 cat("A3SS with coords:", sum(!is.na(flat_mcols_A3SS$junc_start) & !is.na(flat_mcols_A3SS$junc_end)), "\n")
+
 # -----------------------
 # RI: junction coords + featureID match
 # -----------------------
