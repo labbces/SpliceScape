@@ -6,3 +6,5 @@ merging_outputs/test*
 test
 submit_runManual.sh*
 Log.out
+utils/sgSeq.R
+.RData
