@@ -121,6 +121,54 @@ add_A5SS_junctions <- function(df_A5SS, Jdf) {
   df_A5SS
 }
 
+# A3SS-specific: choose distal/prox junction within each event
+add_A3SS_junctions <- function(df_A3SS, Jdf) {
+  df_A3SS$junc_start <- NA_integer_
+  df_A3SS$junc_end   <- NA_integer_
+
+  pf <- parse_DA_vec(df_A3SS$from)  # donor
+  pt <- parse_DA_vec(df_A3SS$to)    # acceptor (not always needed, but parsed for completeness)
+
+  key_vec <- paste(df_A3SS$geneID, df_A3SS$eventID, sep = "_")
+  keys <- unique(key_vec)
+
+  for (k in keys) {
+    rows <- which(key_vec == k)
+    if (!length(rows)) next
+
+    chr <- pf$chr[rows[1]]
+    strand_ev <- pf$strand[rows[1]]
+    don <- pf$pos[rows[1]]  # donor fixed for A3SS
+
+    if (strand_ev == "+") {
+      # '+' : donor fixed at start; acceptor varies at end
+      cand <- Jdf[Jdf$seqnames == chr & Jdf$strand == strand_ev & Jdf$start == don, , drop = FALSE]
+      if (nrow(cand) < 1) next
+
+      # distal acceptor = larger genomic coord (more downstream)
+      j_dist <- cand[which.max(cand$end), , drop = FALSE]
+      j_prox <- cand[which.min(cand$end), , drop = FALSE]
+
+    } else {
+      # '-' : donor fixed at end; acceptor varies at start
+      cand <- Jdf[Jdf$seqnames == chr & Jdf$strand == strand_ev & Jdf$end == don, , drop = FALSE]
+      if (nrow(cand) < 1) next
+
+      # distal acceptor = smaller genomic coord (more upstream in transcript)
+      j_dist <- cand[which.min(cand$start), , drop = FALSE]
+      j_prox <- cand[which.max(cand$start), , drop = FALSE]
+    }
+
+    for (r in rows) {
+      sel <- if (df_A3SS$variantType[r] == "A3SS:D") j_dist else j_prox
+      df_A3SS$junc_start[r] <- sel$start
+      df_A3SS$junc_end[r]   <- sel$end
+    }
+  }
+
+  df_A3SS
+}
+
 # Safely pull a sample column from an assay matrix-like object
 get_sample_vec <- function(assay_obj, sample_name) {
   if (is.null(assay_obj)) return(NULL)
@@ -212,6 +260,21 @@ write.table(
 cat("A5SS rows:", nrow(flat_mcols_A5SS), "\n")
 cat("A5SS with coords:", sum(!is.na(flat_mcols_A5SS$junc_start) & !is.na(flat_mcols_A5SS$junc_end)), "\n")
 
+# -----------------------
+# A3SS: junction coords
+# -----------------------
+flat_mcols_A3SS <- flat_mcols[flat_mcols$variantType %in% c("A3SS:D", "A3SS:P"), , drop = FALSE]
+flat_mcols_A3SS <- add_A3SS_junctions(flat_mcols_A3SS, Jdf)
+
+write.table(
+  flat_mcols_A3SS,
+  file = file.path(output_dir, "sgseq_variants_A3SS_with_junctions.tsv"),
+  sep = "\t", quote = FALSE, row.names = FALSE
+)
+
+# Quick inspect
+cat("A3SS rows:", nrow(flat_mcols_A3SS), "\n")
+cat("A3SS with coords:", sum(!is.na(flat_mcols_A3SS$junc_start) & !is.na(flat_mcols_A3SS$junc_end)), "\n")
 # -----------------------
 # RI: junction coords + featureID match
 # -----------------------
