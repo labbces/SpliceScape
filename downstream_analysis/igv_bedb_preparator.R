@@ -4,57 +4,74 @@ library(RSQLite)
 library(DBI)
 library(stringr)
 
+options(scipen = 999)
 
-species_of_interest <- "Oryza sativa" #### update
+species_of_interest <- "Oryza sativa" 
 output_bed_file <- paste0("all_events_", gsub(" ", "_", species_of_interest), ".bed")
-
 db_path <- "/home/bia/LandscapeSplicingGrasses/data/grasses.db"
+
 con <- dbConnect(RSQLite::SQLite(), dbname = db_path)
 
+# 1. Carregamos os dados 
 splicing_data <- tbl(con, "splicing_events") %>%
   filter(species == species_of_interest) %>%
+  select(event_id, seqid, strand, full_coord, event_type, mean_psi_majiq) %>% 
   collect()
 
 dbDisconnect(con)
 
-# Format BED12 ---
+# 2. Processamento
 bed_data <- splicing_data %>%
-  filter(
-    !is.na(upstream_exon_coord) & 
-    !is.na(downstream_exon_coord) &
-    str_detect(upstream_exon_coord, "^\\d+-\\d+$") &
-    str_detect(downstream_exon_coord, "^\\d+-\\d+$")
+  filter(!is.na(full_coord), full_coord != "") %>%
+  
+  mutate(
+    is_RI = str_detect(event_type, "RI|intron") & !str_detect(full_coord, "-"),
+    coords_extracted = if_else(
+      is_RI,
+      str_extract(full_coord, ":(\\d+),(\\d+)", group = c(1, 2)),
+      str_extract(full_coord, ":(\\d+),(\\d+)-(\\d+),(\\d+)", group = c(1, 2, 3, 4))
+    )
   ) %>%
   
-  separate(upstream_exon_coord, into = c("up_start", "up_end"), sep = "-", convert = TRUE) %>%
-  separate(downstream_exon_coord, into = c("down_start", "down_end"), sep = "-", convert = TRUE) %>%
+  separate(full_coord, into = c("discard_seq", "raw_coords"), sep = ":", remove = FALSE) %>%
+  
+  mutate(
+      c1 = as.numeric(str_match(raw_coords, "^(\\d+),")[,2]),
+      c2 = as.numeric(str_match(raw_coords, ",(\\d+)[,-]")[,2]), 
+      c3 = as.numeric(str_match(raw_coords, "-(\\d+),")[,2]),    
+      c4 = as.numeric(str_match(raw_coords, ",(\\d+)$")[,2])     
+  ) %>%
   
   transmute(
     chrom = seqid,
-    chromStart = up_start - 1,
-    chromEnd = down_end,
+    chromStart = c1 - 1, 
+    chromEnd = if_else(is_RI, c2, c4),
     name = event_id,
-    score = 0,
+    
+    # --- CORREÇÃO DO PSI AQUI ---
+    # Transforma 0.5 (50%) em 500 para o padrão BED
+    score = as.integer(coalesce(mean_psi_majiq, 0) * 1000),
+    
     strand = strand,
-    thickStart = up_start - 1,
-    thickEnd = down_end,
-    itemRgb = 0,
-        
-    # Config to deal with reteined and spliced introns
-    blockCount = if_else(str_detect(event_id, "RI_intron"), 1, 2),
+    thickStart = chromStart,
+    thickEnd = chromEnd,
+    itemRgb = "0,0,0", 
+    
+    blockCount = if_else(is_RI, 1, 2),
     
     blockSizes = if_else(
-      str_detect(event_id, "RI_intron"),
-      as.character(down_end - (up_start - 1)), 
-      paste(up_end - up_start, down_end - down_start, sep = ",")
+      is_RI,
+      as.character(c2 - c1 + 1),
+      paste((c2 - c1 + 1), (c4 - c3 + 1), sep = ",")
     ),
     
     blockStarts = if_else(
-      str_detect(event_id, "RI_intron"),
+      is_RI,
       "0",
-      paste(0, down_start - (up_start - 1) -1, sep = ",")
+      paste("0", (c3 - c1), sep = ",")
     )
-  )
+  ) %>%
+  filter(!is.na(chromStart), !is.na(chromEnd))
 
 write.table(
   bed_data, 
@@ -65,4 +82,4 @@ write.table(
   quote = FALSE
 )
 
-print(paste("BED file to", species_of_interest, "successfully created:", output_bed_file))
+print(paste("BED file com PSI Scores gerado:", output_bed_file))
