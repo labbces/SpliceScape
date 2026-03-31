@@ -301,7 +301,9 @@ process SGSEQ {
     """
 }
 
-process MAJIQ_SETTING {
+// MAJIQ PROCESSING 
+// MAJIQ V2
+process MAJIQ_SETTING_V2 {
     tag "${sra_accession} on ${species_name}"
     publishDir "${params.outdir}/cleanup"
     cache 'lenient'
@@ -349,7 +351,7 @@ process MAJIQ_SETTING {
     """
 }
 
-process MAJIQ_RUN { 
+process MAJIQ_RUN_V2 { 
     tag "${sra_accession} on ${species_name}"
     publishDir "${params.outdir}/MAJIQ_results", mode: 'symlink'
     cache 'lenient'
@@ -377,3 +379,146 @@ process MAJIQ_RUN {
     ${majiq_bin_path}/voila modulize ${splicegraph_sql_file} ${psi_voila_file} -d ${voila_out_dir} --keep-constitutive --preserve-handles-hdf5 -j ${majiq_cores}
     """
 }
+
+
+// MAJIQ V3
+
+process MAJIQ_ANNOTATION_DB {
+    // run once per species
+    tag "${species_name}"
+
+    input:
+    path genomeGFF_file
+    val species_name
+    val outdir
+    
+    output:
+    path "gff_${species_name}.ok", emit: annotation_db
+
+    script:
+    def majiq_annotation = "${outdir}/majiq/scratch/scratch_long/annotation_${species_name}.zarr"
+    """
+    mkdir -p ${outdir}/majiq/scratch/scratch_long
+    majiq-v3 gff3 ${genomeGFF_file} ${majiq_annotation} --overwrite
+    touch gff_${species_name}.ok
+    """
+}
+
+process MAJIQ_SJ {
+    // Run for each sample
+    tag "${sra_accession} on ${species_name}"
+
+    input:
+    tuple path(bam_dir_path), path(bam_index_file), path(bam_actual_file), val(sra_accession)
+    val species_name
+    val outdir
+    path annotation_db
+
+    output:
+    tuple val("${sra_accession}"), path("bam_${species_name}_${sra_accession}.ok"), emit: sj_file
+
+    script:
+    def majiq_annotation = "${outdir}/majiq/scratch/scratch_long/annotation_${species_name}.zarr"
+    def majiq_sj = "${outdir}/majiq/scratch/scratch_short/${species_name}_${sra_accession}.Aligned.sortedByCoord.out.bam.sj"
+    """
+    mkdir -p ${outdir}/majiq/scratch
+    majiq-v3 sj ${bam_actual_file} ${majiq_annotation} ${majiq_sj}
+    touch bam_${species_name}_${sra_accession}.ok
+    """
+}
+
+process MAJIQ_BUILD{
+    tag "${sra_accession} on ${species_name}"
+
+    input:
+    path annotation_db
+    tuple val(sra_accession), path(sj_file)
+    val outdir
+    val species_name
+
+    output:
+    tuple val("${sra_accession}"), path("build_${species_name}_${sra_accession}_sg.ok"), emit: build_file
+
+    script:
+    def majiq_annotation = "${outdir}/majiq/scratch/scratch_long/annotation_${species_name}.zarr"
+    def majiq_build = "${outdir}/majiq/scratch/scratch_short/build_${species_name}_${sra_accession}_sg.zarr"
+    def majiq_sj = "${outdir}/majiq/scratch/scratch_short/${species_name}_${sra_accession}.Aligned.sortedByCoord.out.bam.sj"
+    """
+    mkdir -p ${outdir}/majiq/scratch
+    majiq-v3 build ${majiq_annotation} ${majiq_build} --sjs ${majiq_sj}
+    touch build_${species_name}_${sra_accession}_sg.ok
+    """
+}
+
+process MAJIQ_PSI {
+    tag "${sra_accession} on ${species_name}"
+
+    input:
+    val outdir
+    val species_name
+    tuple val(sra_accession), path(build_file), path(sj_file)
+
+    output:
+    tuple val("${sra_accession}"), path("psi_${species_name}_${sra_accession}.ok"), emit: psi_file
+
+    script:
+    def majiq_build = "${outdir}/majiq/scratch/scratch_short/build_${species_name}_${sra_accession}_sg.zarr"
+    def majiq_psi = "${outdir}/majiq/scratch/scratch_short/psi_${species_name}_${sra_accession}.psicov"
+    def majiq_sj = "${outdir}/majiq/scratch/scratch_short/${species_name}_${sra_accession}.Aligned.sortedByCoord.out.bam.sj"
+    """
+    mkdir -p ${outdir}/majiq/scratch
+    majiq-v3 psi-coverage ${majiq_build} ${majiq_psi} ${majiq_sj}
+    touch psi_${species_name}_${sra_accession}.ok
+    """
+}
+
+process MAJIQ_SG_COVERAGE{
+    input:
+    val outdir
+    val species_name
+    tuple val(sra_accession), path(build_file), path(sj_file)
+    
+    output:
+    tuple val("${sra_accession}"), path("build_sg_${species_name}_${sra_accession}.ok"), emit: sg_coverage_file
+
+    script:
+    def majiq_build = "${outdir}/majiq/scratch/scratch_short/build_${species_name}_${sra_accession}_sg.zarr"
+    def majiq_sg_coverage = "${outdir}/majiq/scratch/scratch_short/build_${species_name}_${sra_accession}.sgc"
+    def majiq_sj = "${outdir}/majiq/scratch/scratch_short/${species_name}_${sra_accession}.Aligned.sortedByCoord.out.bam.sj"
+    """
+    mkdir -p ${outdir}/majiq/scratch
+    majiq-v3 sg-coverage ${majiq_build} ${majiq_sg_coverage} ${majiq_sj}
+    touch build_sg_${species_name}_${sra_accession}.ok
+    """
+}
+
+process MAJIQ_VOILA_MODULIZE{
+    input:
+    val outdir
+    val species_name
+    tuple val(sra_accession), path(build_file), path(psi_file), path(sg_coverage_file)
+
+    output:
+    path "majiq_final_${species_name}_${sra_accession}.ok", emit: voila_results 
+
+    script:
+    def majiq_build = "${outdir}/majiq/scratch/scratch_short/build_${species_name}_${sra_accession}_sg.zarr"
+    def majiq_psi = "${outdir}/majiq/scratch/scratch_short/psi_${species_name}_${sra_accession}.psicov"
+    def majiq_sg_coverage = "${outdir}/majiq/scratch/scratch_short/build_${species_name}_${sra_accession}.sgc"
+    
+    // clean up
+
+    def cleanup = params.majiq_temp_delete ? """
+    rm -rf ${outdir}/majiq/scratch/scratch_short/
+    """ : ""
+
+    """
+    mkdir -p ${outdir}/majiq/results
+    voila modulize ${majiq_build} ${majiq_psi}  ${majiq_sg_coverage}  -d ${outdir}/majiq/results/${sra_accession} --keep-constitutive --show-all --show-read-counts --overwrite
+    touch majiq_final_${species_name}_${sra_accession}.ok 
+
+    ${cleanup}
+    """
+}
+
+//process FINAL_CLEANUP
