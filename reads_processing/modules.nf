@@ -1,56 +1,62 @@
 // modules.nf
+// TODO
+// Escolher pegar reads pelo NCBI ou pelo Cloud
 
 process GET_READ_FTP {
     tag "${sra_accession}"
-    publishDir "${params.outdir}/cleanup"
-    cache 'lenient'
     errorStrategy 'ignore'
     maxForks 3
 
     input:
     val sra_accession
-    path outdir 
+    val outdir 
 
     output:
-    tuple path("${sra_accession}.json"), val(sra_accession), emit: ftp_json_sra
+    tuple val(sra_accession), path("ftp_${sra_accession}.ok"), emit: ftp_json_sra
 
     script:
+    def ftp = "${outdir}/reads/scratch/FTP/${sra_accession}.json" 
     """
-    ffq --ftp -o "${sra_accession}.json" $sra_accession
+    mkdir -p ${outdir}/reads/scratch/FTP
+    
+    ffq --ftp -o "${ftp}" $sra_accession && \\
+    touch ftp_${sra_accession}.ok
     sleep 1
     """
 }
 
 process DOWNLOAD_READ_FTP {
     tag "${sra_accession}"
-    publishDir "${params.outdir}/cleanup"
-    cache 'lenient'
     errorStrategy 'ignore'
 
     input:
-    tuple path(json_file), val(sra_accession)
-    path outdir 
+    tuple val(sra_accession), path(json_file)
+    val outdir 
 
     output:
-    tuple path('*_1.fastq.gz'), path('*_2.fastq.gz'), val(sra_accession), emit: reads_sra
+    tuple val(sra_accession), path("raw_read_${sra_accession}.ok"),  emit: reads_sra
     path json_file, emit: json_file_passthrough 
 
     script:
+    def raw_read_1 = "${outdir}/reads/scratch/raw/${sra_accession}_1.fastq.gz"
+    def raw_read_2 = "${outdir}/reads/scratch/raw/${sra_accession}_2.fastq.gz"
     """
-    download_from_json.py --json $json_file
+    mkdir -p ${outdir}/reads/scratch/raw/
+    
+    download_from_json.py --json $json_file && \\
+    mv *_1.fastq.gz ${raw_read_1} && \\
+    mv *_2.fastq.gz ${raw_read_2} && \\
+    touch raw_read_${sra_accession}.ok
     """
 }
 
 process RUN_BBDUK {
     tag "${sra_accession}"
-    publishDir "${params.outdir}/cleanup", pattern: "${sra_accession}.trimmed*"
-    publishDir "${params.outdir}/stats/bbduk", pattern: "${sra_accession}.bbduk.log"
-    cache 'lenient'
     errorStrategy 'retry'
     maxRetries 3
 
     input:
-    tuple path(reads1), path(reads2), val(sra_accession)
+    tuple val(sra_accession), path(raw_read)
     val minlength
     val trimq
     val k_val 
@@ -58,18 +64,36 @@ process RUN_BBDUK {
     path json_file_to_clean 
     val bbduk_executable 
     val max_mem          
-    path outdir          
+    val outdir          
 
     output:
-    tuple path("${sra_accession}.trimmed.R1.fastq.gz"), path("${sra_accession}.trimmed.R2.fastq.gz"), val(sra_accession), emit: trimmed_reads_sra
-    path "${sra_accession}.bbduk.log", emit: bbduk_log_file
+    tuple  val(sra_accession), path("bbduk_${sra_accession}.ok"), emit: trimmed_reads_sra
 
     script:
-    def raw = "in1=${reads1} in2=${reads2}"
-    def trimmed_out = "out1=${sra_accession}.trimmed.R1.fastq.gz out2=${sra_accession}.trimmed.R2.fastq.gz"
+    def raw_read_1 = "${outdir}/reads/scratch/raw/${sra_accession}_1.fastq.gz"
+    def raw_read_2 = "${outdir}/reads/scratch/raw/${sra_accession}_2.fastq.gz"
+    def raw = "in1=${raw_read_1} in2=${raw_read_2}"
     def contaminants_fa = "rref=${rref_path}"
     def args = "minlength=${minlength} qtrim=w trimq=${trimq} showspeed=t k=${k_val} overwrite=true"
+    def bbduk_log = "${outdir}/reads/inspect/bbduk/${sra_accession}.bbduk.log"
+    def clean_read_1 = "${outdir}/reads/scratch/clean/${sra_accession}.trimmed.R1.fastq.gz"
+    def clean_read_2 = "${outdir}/reads/scratch/clean/${sra_accession}.trimmed.R2.fastq.gz"
+    def trimmed_out = "out1=${clean_read_1} out2=${clean_read_2}"
+
+    def cleanup_raw_reads = params.rm_reads_scratch_raw ? """
+    rm -rf ${outdir}/reads/scratch/FTP/${sra_accession}.json
+    rm -rf ${raw_read_1}
+    rm -rf ${raw_read_2}
+    """ : "true"
+    
+    def cleanup_logs = params.rm_reads_inspect_bbduk_logs ? """
+    rm -rf ${bbduk_log}
+    """ : "true"
+    
     """
+    mkdir -p ${outdir}/reads/inspect/bbduk/
+    mkdir -p ${outdir}/reads/scratch/clean/
+
     ${bbduk_executable} \\
         -Xmx${max_mem} \\
         $raw \\
@@ -77,29 +101,15 @@ process RUN_BBDUK {
         threads=$task.cpus \\
         $contaminants_fa \\
         $args \\
-        2> "${sra_accession}.bbduk.log" \\
-
-    original_file_1="\$(readlink -f ${json_file_to_clean})" && \\
-    tam=\$(stat --format=%s "\$original_file_1") && \\
-    echo "" > "\$original_file_1"  && \\
-    truncate -s "\$tam" "\$original_file_1"  && \\
-
-    original_file="\$(readlink -f ${reads1})"  && \\
-    tam=\$(stat --format=%s "\$original_file") && \\
-    echo "" > "\$original_file"  && \\
-    truncate -s "\$tam" "\$original_file" && \\
-
-    original_file_2="\$(readlink -f ${reads2})"  && \\
-    tam=\$(stat --format=%s "\$original_file_2") && \\
-    echo "" > "\$original_file_2"  && \\
-    truncate -s "\$tam" "\$original_file_2"
+        2> "${bbduk_log}" && \\
+    touch bbduk_${sra_accession}.ok && \\
+    ${cleanup_raw_reads}
+    ${cleanup_logs}
     """
 }  
 
 process WGET_DOWNLOADER {
     tag "${sra_accession}"
-    publishDir "${params.outdir}/cleanup"
-    cache 'lenient'
     errorStrategy 'retry'
     maxRetries 2
 
@@ -108,17 +118,21 @@ process WGET_DOWNLOADER {
     val url
     val user
     val password
+    val outdir 
 
     output:
-    tuple path("*_1.fastq.gz"), path("*_2.fastq.gz"), val(sra_accession), emit: reads_sra
+    tuple val(sra_accession), path("raw_read_${sra_accession}.ok"), emit: reads_sra
 
     script:
-    // As aspas simples em user/password ajudam a evitar problemas com caracteres especiais
     def user_arg = "--user='${user}'"
     def pass_arg = "--password='${password}'"
     def accept_pattern = "-A '*${sra_accession}*.fastq.gz'"
+    def raw_read_1 = "${outdir}/reads/scratch/raw/${sra_accession}_1.fastq.gz"
+    def raw_read_2 = "${outdir}/reads/scratch/raw/${sra_accession}_2.fastq.gz"
 
     """
+    mkdir -p ${outdir}/reads/scratch/raw/
+
     wget -r -np ${accept_pattern} ${user_arg} ${pass_arg} "${url}"
 
     # Check if wget command was successful
@@ -133,43 +147,53 @@ process WGET_DOWNLOADER {
     if [ \$(echo "\$read1" | wc -w) -eq 1 ] && [ \$(echo "\$read2" | wc -w) -eq 1 ] && [ -s "\$read1" ] && [ -s "\$read2" ]; then
         echo "SUCESS: Files for ${sra_accession} downloaded and verified."
         
-        mv "\$read1" .
-        mv "\$read2" .
+        mv "\$read1" ${raw_read_1}
+        mv "\$read2" ${raw_read_2}
     else
         echo "ERR: Fastq files for ${sra_accession} not found or empty." >&2
         exit 1
-    fi
+    fi && \\
+    touch raw_read_${sra_accession}.ok
     """
 }
 
 process ALTERNATIVE_RUN_BBDUK {
     tag "${sra_accession}"
-    publishDir "${params.outdir}/cleanup", pattern: "${sra_accession}.trimmed*"
-    publishDir "${params.outdir}/stats/bbduk", pattern: "${sra_accession}.bbduk.log"
-    cache 'lenient'
     errorStrategy 'retry'
-    maxRetries 3
 
     input:
-    tuple path(reads1), path(reads2), val(sra_accession)
+    tuple val(sra_accession), path(raw_read)
     val minlength
     val trimq
     val k_val 
     path rref_path 
     val bbduk_executable 
     val max_mem          
-    path outdir    
+    val outdir    
 
     output:
-    tuple path("${sra_accession}.trimmed.R1.fastq.gz"), path("${sra_accession}.trimmed.R2.fastq.gz"), val(sra_accession), emit: trimmed_reads_sra
-    path "${sra_accession}.bbduk.log", emit: bbduk_log_file
+    tuple val(sra_accession), path("bbduk_${sra_accession}.ok"), emit: trimmed_reads_sra
 
     script:
-    def raw = "in1=${reads1} in2=${reads2}"
-    def trimmed_out = "out1=${sra_accession}.trimmed.R1.fastq.gz out2=${sra_accession}.trimmed.R2.fastq.gz"
+    def raw_read_1 = "${outdir}/reads/scratch/raw/${sra_accession}_1.fastq.gz"
+    def raw_read_2 = "${outdir}/reads/scratch/raw/${sra_accession}_2.fastq.gz"
+    def raw = "in1=${raw_read_1} in2=${raw_read_2}"
     def contaminants_fa = "rref=${rref_path}"
     def args = "minlength=${minlength} qtrim=w trimq=${trimq} showspeed=t k=${k_val} overwrite=true"
+    def bbduk_log = "${outdir}/reads/inspect/bbduk/${sra_accession}.bbduk.log"
+    def clean_read_1 = "${outdir}/reads/scratch/clean/${sra_accession}.trimmed.R1.fastq.gz"
+    def clean_read_2 = "${outdir}/reads/scratch/clean/${sra_accession}.trimmed.R2.fastq.gz"
+    def trimmed_out = "out1=${clean_read_1} out2=${clean_read_2}"
+
+    def cleanup = params.rm_reads_scratch_raw ? """
+    rm -rf ${raw_read_1}
+    rm -rf ${raw_read_2}
+    """ : "true"
+    
     """
+    mkdir -p ${outdir}/reads/inspect/bbduk/
+    mkdir -p ${outdir}/reads/scratch/clean/
+
     ${bbduk_executable} \\
         -Xmx${max_mem} \\
         $raw \\
@@ -177,26 +201,15 @@ process ALTERNATIVE_RUN_BBDUK {
         threads=$task.cpus \\
         $contaminants_fa \\
         $args \\
-        2> "${sra_accession}.bbduk.log"
-
-    original_file="\$(readlink -f ${reads1})"  && \\
-    tam=\$(stat --format=%s "\$original_file") && \\
-    echo "" > "\$original_file"  && \\
-    truncate -s "\$tam" "\$original_file" && \\
-
-    original_file_2="\$(readlink -f ${reads2})"  && \\
-    tam=\$(stat --format=%s "\$original_file_2") && \\
-    echo "" > "\$original_file_2"  && \\
-    truncate -s "\$tam" "\$original_file_2"
-
+        2> "${bbduk_log}" && \\
+    touch bbduk_${sra_accession}.ok && \\
+    ${cleanup}
     """
 }
 
 process GENOME_GENERATE_STAR {
     tag "${species_name}"
-    publishDir "${params.outdir}/genomeGenerate", pattern: "${species_name}/*"
-    publishDir "${params.outdir}/stats/star", pattern: "${species_name}/*Log.out"
-    cache 'lenient'
+    publishDir "${params.backbonedir}/mapping/backbone/genomeGenerate",  mode: 'symlink'
     errorStrategy 'finish'
 
     input:
@@ -204,16 +217,15 @@ process GENOME_GENERATE_STAR {
     path genomeGFF_file
     val num_threads
     val species_name
-    path outdir 
 
     output:
     path "${species_name}", emit: genome_index_dir
-    path "${species_name}/*Log.out", emit: genome_index_logs
 
     script:
     def genDir = "${species_name}"
     """
     mkdir -p $genDir
+
     STAR --runThreadN ${num_threads} \\
         --runMode genomeGenerate \\
         --genomeDir $genDir \\
@@ -224,30 +236,33 @@ process GENOME_GENERATE_STAR {
 
 process MAPPING_STAR {
     tag "${sra_accession} on ${species_name}"
-    publishDir "${params.outdir}/cleanup", pattern: "${species_name}/${sra_accession}/*"
-    publishDir "${params.outdir}/stats/star", pattern: "${species_name}/${sra_accession}/*Log*.out"
-    cache 'lenient'
     errorStrategy 'ignore'
 
     input:
-    tuple path(reads1_bbk), path(reads2_bbk), val(sra_accession)
+    tuple val(sra_accession), path(trimmed_bbduk_reads)
     path genome_idx_dir
     val num_threads
     val species_name
-    path outdir 
+    val outdir 
 
     output:
-    tuple path("${species_name}/${sra_accession}"), path("${species_name}/${sra_accession}/*.bam.bai"), path("${species_name}/${sra_accession}/*.bam"), val(sra_accession), emit: bam_sra_tuple
-    path "${species_name}/${sra_accession}/*Log*.out", emit: star_log_files
+    tuple val("${sra_accession}"), path("mapping_${sra_accession}.ok"), emit: bam_sra_tuple
 
     script:
-    def outPrefixDir = "${species_name}/${sra_accession}"
-    def fileNamePrefix = "${outPrefixDir}/${species_name}_${sra_accession}_"
-    def reads_input = "${reads1_bbk} ${reads2_bbk}"
+    def fileNamePrefix = "${outdir}/mapping/inspect/${sra_accession}/${species_name}_${sra_accession}_"
+    def clean_read_1 = "${outdir}/reads/scratch/clean/${sra_accession}.trimmed.R1.fastq.gz"
+    def clean_read_2 = "${outdir}/reads/scratch/clean/${sra_accession}.trimmed.R2.fastq.gz"
+    def reads_input = "${clean_read_1} ${clean_read_2}"
     def unsortedBAM = "${fileNamePrefix}Aligned.out.bam"
     def sortedBAM = "${fileNamePrefix}Aligned.sortedByCoord.out.bam"
+
+    def cleanup = params.rm_reads_scratch_clean ? """
+    rm -rf ${clean_read_1} && \\
+    rm -rf ${clean_read_2}
+    """ : "true"
+
     """
-    # mkdir -p "${outPrefixDir}"
+    mkdir -p ${outdir}/mapping/inspect/${sra_accession}
 
     STAR --runThreadN ${num_threads} \\
         --genomeDir $genome_idx_dir \\
@@ -259,133 +274,42 @@ process MAPPING_STAR {
         --twopassMode Basic
 
     samtools sort -@ ${num_threads} -o $sortedBAM $unsortedBAM
-    samtools index $sortedBAM \\
-
-    rm $unsortedBAM \\
-
-    original_file="\$(readlink -f ${reads1_bbk})"  && \\
-    tam=\$(stat --format=%s "\$original_file") && \\
-    echo "" > "\$original_file"  && \\
-    truncate -s "\$tam" "\$original_file"  && \\
-
-    original_file_2="\$(readlink -f ${reads2_bbk})"  && \\
-    tam=\$(stat --format=%s "\$original_file_2") && \\
-    echo "" > "\$original_file_2"  && \\
-    truncate -s "\$tam" "\$original_file_2"
+    samtools index $sortedBAM && \\
+    rm $unsortedBAM && \\
+    touch mapping_${sra_accession}.ok && \\
+    ${cleanup} 
     """
 }
 
 process SGSEQ {
     tag "${sra_accession} on ${species_name}"
-    publishDir "${params.outdir}/SGSeq_results", mode: 'symlink'
-    cache 'lenient'
+    publishDir "${params.outdir}/SGSeq/results/", mode: 'copy'
     errorStrategy 'ignore'
 
     input:
-    tuple path(bam_dir_path), path(bam_index_file), path(bam_actual_file), val(sra_accession)
+    // tuple path(bam_dir_path), path(bam_index_file), path(bam_actual_file), val(sra_accession)
+    tuple val(sra_accession), path(bam_file_ok)
     path genomeGFF_file
     val num_cores
     val species_name
     val r_libs_path
-    path outdir 
+    val outdir 
 
     output:
-    tuple path("SGSeq_results/${species_name}/SGSeq_${sra_accession}.csv"), path("SGSeq_results/${species_name}/SGSeq_coordinates_${sra_accession}.csv"), val(sra_accession), emit: sgseq_csv_sra
-    val("SGSeq_concluded_${sra_accession}"), emit: status
-    tuple path(bam_dir_path), path(bam_index_file), path(bam_actual_file), val(sra_accession), emit: bam_passthrough 
+    tuple val(sra_accession), path("${sra_accession}/SGSeq_${sra_accession}.csv"), path("${sra_accession}/SGSeq_coordinates_${sra_accession}.csv"), emit: sgseq_csv_sra    
 
     script:
-    def outPrefix = "SGSeq_results/${species_name}"
+    def bam_file = "${outdir}/mapping/inspect/${sra_accession}/${species_name}_${sra_accession}_Aligned.sortedByCoord.out.bam"
+    def outPrefix = "${sra_accession}"
     """
-    SGSeq.R --gff "${genomeGFF_file}" --cores ${num_cores} --path_to_bam "${bam_actual_file}" --sra_id "${sra_accession}" --out $outPrefix --libPaths "${r_libs_path}"
-    """
-}
-
-// MAJIQ PROCESSING 
-// MAJIQ V2
-process MAJIQ_SETTING_V2 {
-    tag "${sra_accession} on ${species_name}"
-    publishDir "${params.outdir}/cleanup"
-    cache 'lenient'
-    errorStrategy 'ignore'
-
-    input:
-    tuple path(bam_dir_path), path(bam_index_file), path(bam_actual_file), val(sra_accession)
-    val species_name
-    val genome_assembly_path // params.genome_path
-    val sgseq_status
-    val majiq_bin_path
-    path genomeGFF_file
-    path outdir 
-
-    output:
-    tuple path("settings/${species_name}/majiq_settings_${species_name}_${sra_accession}.ini"), \
-          path("psi/${species_name}/${sra_accession}/${sra_accession}.psi.tsv"), \
-          path("psi/${species_name}/${sra_accession}/${sra_accession}.psi.voila"), \
-          path("psi/${species_name}/${sra_accession}/psi_majiq.log"), \
-          path("build/${species_name}/${sra_accession}/splicegraph.sql"), \
-          val(sra_accession), emit: majiq_input_tuple
-
-    script:
-    def settings_out_dir = "settings/${species_name}"
-    def star_bam_prefix = "${species_name}_${sra_accession}_Aligned.sortedByCoord.out" 
-    def build_out_dir = "build/${species_name}/${sra_accession}"
-    def psi_out_dir = "psi/${species_name}/${sra_accession}"
-    """
-    echo "SGSeq status for ${sra_accession}: ${sgseq_status}" // Apenas para logar o status recebido
-
-    majiq_settings_file_creator.py --output_dic "$settings_out_dir" --species "$species_name" --sra "$sra_accession" --bam_dir "${bam_dir_path}" --assembly "$genome_assembly_path" --output_star "$star_bam_prefix"
-
-    ${majiq_bin_path}/majiq build ${genomeGFF_file} --conf $settings_out_dir/majiq_settings_${species_name}_${sra_accession}.ini --output $build_out_dir
-    ${majiq_bin_path}/majiq psi $build_out_dir/*.majiq --name $sra_accession --output $psi_out_dir
-
-    # original_file="\$(readlink -f ${bam_index_file})" && \\
-    # tam=\$(stat --format=%s "\$original_file") && \\
-    # echo "" > "\$original_file"  && \\
-    # truncate -s "\$tam" "\$original_file"
-
-    # original_file_2="\$(readlink -f ${bam_actual_file})" && \\
-    # tam=\$(stat --format=%s "\$original_file_2") && \\
-    # echo "" > "\$original_file_2"  && \\
-    # truncate -s "\$tam" "\$original_file_2" 
+    SGSeq.R --gff "${genomeGFF_file}" --cores ${num_cores} --path_to_bam "${bam_file}" --sra_id "${sra_accession}" --out $outPrefix --libPaths "${r_libs_path}"
     """
 }
-
-process MAJIQ_RUN_V2 { 
-    tag "${sra_accession} on ${species_name}"
-    publishDir "${params.outdir}/MAJIQ_results", mode: 'symlink'
-    cache 'lenient'
-    errorStrategy 'ignore'
-
-    input:
-    val species_name
-    val majiq_bin_path
-    tuple path(settings_ini_file), \
-          path(psi_tsv_file), \
-          path(psi_voila_file), \
-          path(psi_log_file), \
-          path(splicegraph_sql_file), \
-          val(sra_accession)
-    path outdir 
-    val majiq_cores
-
-
-    output:
-    path "voila/${species_name}/${sra_accession}/*", emit: voila_results
-
-    script:
-    def voila_out_dir = "voila/${species_name}/${sra_accession}"
-    """
-    ${majiq_bin_path}/voila modulize ${splicegraph_sql_file} ${psi_voila_file} -d ${voila_out_dir} --keep-constitutive --preserve-handles-hdf5 -j ${majiq_cores}
-    """
-}
-
-
-// MAJIQ V3
 
 process MAJIQ_ANNOTATION_DB {
     // run once per species
     tag "${species_name}"
+    errorStrategy 'finish'
 
     input:
     path genomeGFF_file
@@ -396,10 +320,11 @@ process MAJIQ_ANNOTATION_DB {
     path "gff_${species_name}.ok", emit: annotation_db
 
     script:
-    def majiq_annotation = "${outdir}/majiq/scratch/scratch_long/annotation_${species_name}.zarr"
+    def majiq_annotation = "${outdir}/majiq/backbone/annotation_${species_name}.zarr"
     """
-    mkdir -p ${outdir}/majiq/scratch/scratch_long
-    majiq-v3 gff3 ${genomeGFF_file} ${majiq_annotation} --overwrite
+    mkdir -p ${outdir}/majiq/backbone
+
+    majiq-v3 gff3 ${genomeGFF_file} ${majiq_annotation} --overwrite && \\
     touch gff_${species_name}.ok
     """
 }
@@ -409,7 +334,8 @@ process MAJIQ_SJ {
     tag "${sra_accession} on ${species_name}"
 
     input:
-    tuple path(bam_dir_path), path(bam_index_file), path(bam_actual_file), val(sra_accession)
+    // tuple path(bam_dir_path), path(bam_index_file), path(bam_actual_file), val(sra_accession)
+    tuple val(sra_accession), path(bam_file_ok)
     val species_name
     val outdir
     path annotation_db
@@ -418,11 +344,12 @@ process MAJIQ_SJ {
     tuple val("${sra_accession}"), path("bam_${species_name}_${sra_accession}.ok"), emit: sj_file
 
     script:
-    def majiq_annotation = "${outdir}/majiq/scratch/scratch_long/annotation_${species_name}.zarr"
-    def majiq_sj = "${outdir}/majiq/scratch/scratch_short/${species_name}_${sra_accession}.Aligned.sortedByCoord.out.bam.sj"
+    def majiq_annotation = "${outdir}/majiq/backbone/annotation_${species_name}.zarr"
+    def majiq_sj = "${outdir}/majiq/scratch/${sra_accession}/sj/${species_name}_${sra_accession}.Aligned.sortedByCoord.out.bam.sj"
+    def bam_file = "${outdir}/mapping/inspect/${sra_accession}/${species_name}_${sra_accession}_Aligned.sortedByCoord.out.bam"
     """
-    mkdir -p ${outdir}/majiq/scratch
-    majiq-v3 sj ${bam_actual_file} ${majiq_annotation} ${majiq_sj}
+    mkdir -p ${outdir}/majiq/scratch/${sra_accession}/sj
+    majiq-v3 sj ${bam_file} ${majiq_annotation} ${majiq_sj} --overwrite && \\
     touch bam_${species_name}_${sra_accession}.ok
     """
 }
@@ -440,12 +367,12 @@ process MAJIQ_BUILD{
     tuple val("${sra_accession}"), path("build_${species_name}_${sra_accession}_sg.ok"), emit: build_file
 
     script:
-    def majiq_annotation = "${outdir}/majiq/scratch/scratch_long/annotation_${species_name}.zarr"
-    def majiq_build = "${outdir}/majiq/scratch/scratch_short/build_${species_name}_${sra_accession}_sg.zarr"
-    def majiq_sj = "${outdir}/majiq/scratch/scratch_short/${species_name}_${sra_accession}.Aligned.sortedByCoord.out.bam.sj"
+    def majiq_annotation = "${outdir}/majiq/backbone/annotation_${species_name}.zarr"
+    def majiq_build = "${outdir}/majiq/scratch/${sra_accession}/build/build_${species_name}_${sra_accession}_sg.zarr"
+    def majiq_sj = "${outdir}/majiq/scratch/${sra_accession}/sj/${species_name}_${sra_accession}.Aligned.sortedByCoord.out.bam.sj"
     """
-    mkdir -p ${outdir}/majiq/scratch
-    majiq-v3 build ${majiq_annotation} ${majiq_build} --sjs ${majiq_sj}
+    mkdir -p ${outdir}/majiq/scratch/${sra_accession}/build
+    majiq-v3 build ${majiq_annotation} ${majiq_build} --sjs ${majiq_sj} --overwrite && \\
     touch build_${species_name}_${sra_accession}_sg.ok
     """
 }
@@ -462,17 +389,19 @@ process MAJIQ_PSI {
     tuple val("${sra_accession}"), path("psi_${species_name}_${sra_accession}.ok"), emit: psi_file
 
     script:
-    def majiq_build = "${outdir}/majiq/scratch/scratch_short/build_${species_name}_${sra_accession}_sg.zarr"
-    def majiq_psi = "${outdir}/majiq/scratch/scratch_short/psi_${species_name}_${sra_accession}.psicov"
-    def majiq_sj = "${outdir}/majiq/scratch/scratch_short/${species_name}_${sra_accession}.Aligned.sortedByCoord.out.bam.sj"
+    def majiq_build = "${outdir}/majiq/scratch/${sra_accession}/build/build_${species_name}_${sra_accession}_sg.zarr"
+    def majiq_psi = "${outdir}/majiq/scratch/${sra_accession}/psi/psi_${species_name}_${sra_accession}.psicov"
+    def majiq_sj = "${outdir}/majiq/scratch/${sra_accession}/sj/${species_name}_${sra_accession}.Aligned.sortedByCoord.out.bam.sj"
     """
-    mkdir -p ${outdir}/majiq/scratch
-    majiq-v3 psi-coverage ${majiq_build} ${majiq_psi} ${majiq_sj}
+    mkdir -p ${outdir}/majiq/scratch/${sra_accession}/psi
+    majiq-v3 psi-coverage ${majiq_build} ${majiq_psi} ${majiq_sj} --overwrite && \\
     touch psi_${species_name}_${sra_accession}.ok
     """
 }
 
 process MAJIQ_SG_COVERAGE{
+    tag "${sra_accession} on ${species_name}"
+
     input:
     val outdir
     val species_name
@@ -482,43 +411,48 @@ process MAJIQ_SG_COVERAGE{
     tuple val("${sra_accession}"), path("build_sg_${species_name}_${sra_accession}.ok"), emit: sg_coverage_file
 
     script:
-    def majiq_build = "${outdir}/majiq/scratch/scratch_short/build_${species_name}_${sra_accession}_sg.zarr"
-    def majiq_sg_coverage = "${outdir}/majiq/scratch/scratch_short/build_${species_name}_${sra_accession}.sgc"
-    def majiq_sj = "${outdir}/majiq/scratch/scratch_short/${species_name}_${sra_accession}.Aligned.sortedByCoord.out.bam.sj"
+    def majiq_build = "${outdir}/majiq/scratch/${sra_accession}/build/build_${species_name}_${sra_accession}_sg.zarr"
+    def majiq_sg_coverage = "${outdir}/majiq/scratch/${sra_accession}/sg_coverage/build_${species_name}_${sra_accession}.sgc"
+    def majiq_sj = "${outdir}/majiq/scratch/${sra_accession}/sj/${species_name}_${sra_accession}.Aligned.sortedByCoord.out.bam.sj"
     """
-    mkdir -p ${outdir}/majiq/scratch
-    majiq-v3 sg-coverage ${majiq_build} ${majiq_sg_coverage} ${majiq_sj}
+    mkdir -p ${outdir}/majiq/scratch/${sra_accession}/sg_coverage
+    majiq-v3 sg-coverage ${majiq_build} ${majiq_sg_coverage} ${majiq_sj} --overwrite && \\
     touch build_sg_${species_name}_${sra_accession}.ok
     """
 }
 
 process MAJIQ_VOILA_MODULIZE{
+    tag "${sra_accession} on ${species_name}"
+    errorStrategy 'ignore'
+    publishDir "${params.outdir}/majiq/results/", mode: 'copy'
+
     input:
     val outdir
     val species_name
     tuple val(sra_accession), path(build_file), path(psi_file), path(sg_coverage_file)
 
     output:
-    path "majiq_final_${species_name}_${sra_accession}.ok", emit: voila_results 
+    tuple val("${sra_accession}"), \
+          path("${sra_accession}/*")
+
 
     script:
-    def majiq_build = "${outdir}/majiq/scratch/scratch_short/build_${species_name}_${sra_accession}_sg.zarr"
-    def majiq_psi = "${outdir}/majiq/scratch/scratch_short/psi_${species_name}_${sra_accession}.psicov"
-    def majiq_sg_coverage = "${outdir}/majiq/scratch/scratch_short/build_${species_name}_${sra_accession}.sgc"
+    def majiq_build = "${outdir}/majiq/scratch/${sra_accession}/build/build_${species_name}_${sra_accession}_sg.zarr"
+    def majiq_psi = "${outdir}/majiq/scratch/${sra_accession}/psi/psi_${species_name}_${sra_accession}.psicov"
+    def majiq_sg_coverage = "${outdir}/majiq/scratch/${sra_accession}/sg_coverage/build_${species_name}_${sra_accession}.sgc"
     
     // clean up
 
-    def cleanup = params.majiq_temp_delete ? """
-    rm -rf ${outdir}/majiq/scratch/scratch_short/
-    """ : ""
+    def cleanup = params.rm_majiq_scratch ? """
+    rm -rf ${outdir}/majiq/scratch/${sra_accession}/*
+    """ : "true"
 
     """
     mkdir -p ${outdir}/majiq/results
-    voila modulize ${majiq_build} ${majiq_psi}  ${majiq_sg_coverage}  -d ${outdir}/majiq/results/${sra_accession} --keep-constitutive --show-all --show-read-counts --overwrite
-    touch majiq_final_${species_name}_${sra_accession}.ok 
-
+    
+    voila modulize ${majiq_build} ${majiq_psi}  ${majiq_sg_coverage}  -d ${sra_accession} --keep-constitutive --show-all --show-read-counts --overwrite && \\
     ${cleanup}
     """
 }
 
-//process FINAL_CLEANUP
+// process CLEAN_BAM{ do it when adding to db? not do it at all?
