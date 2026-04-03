@@ -4,6 +4,7 @@ import json
 import argparse
 import os
 import subprocess
+import sys
 
 parser = argparse.ArgumentParser(description='Get SRA FTP from JSON')
 parser.add_argument('--json', type=str, dest='json_file',
@@ -76,5 +77,13 @@ try:
                     f.write(f"{sra_accession}\n")
             if args.verbose:
                 print(f"Failed to download {file_name} after {max_retries} attempts. Added SRA to {failed_file}.")
+            
+            sys.exit(1)
+
+
 except KeyboardInterrupt:
-    print("\nProcess interrupted by user.")
+    print("\nInterrompido pelo usuário.")
+    sys.exit(130) # Código padrão para interrupção manual
+except Exception as e:
+    print(f"Erro inesperado: {e}")
+    sys.exit(1)

@@ -26,7 +26,7 @@ workflow {
     main: 
         log.info """
         SPLICESCAPE - PIPELINE (Paired)(DSL-2)
-        Version          : 1.5.0        
+        Version          : 1.8.0        
         ======================================
         Species          : ${params.species}
         Reads File       : ${params.reads_file}
@@ -56,8 +56,7 @@ workflow {
             params.genomeFASTA, 
             params.genomeGFF, 
             params.threads, 
-            params.species,
-            params.outdir)
+            params.species)
         
         genome_index_ch = GENOME_GENERATE_STAR.out.genome_index_dir
         
@@ -88,7 +87,8 @@ workflow {
             sra_id,
             params.url,
             params.user,
-            params.password
+            params.password,
+            params.outdir
         )
 
         ALTERNATIVE_RUN_BBDUK (
