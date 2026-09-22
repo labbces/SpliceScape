@@ -9,3 +9,4 @@ Log.out
 .RData
 .Rhistory
 *test*
+reads_processing/bin/create_control_db.py
