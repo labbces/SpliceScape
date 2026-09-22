@@ -18,6 +18,8 @@ include { MAJIQ_BUILD                } from './modules.nf'
 include { MAJIQ_PSI                  } from './modules.nf'
 include { MAJIQ_SG_COVERAGE          } from './modules.nf'
 include { MAJIQ_VOILA_MODULIZE       } from './modules.nf'
+include { CREATE_DB                  } from './modules.nf'
+include { POPULATE_DB                } from './modules.nf'
 // include { MAJIQ_SETTING_V2          } from './modules.nf'
 // include { MAJIQ_RUN_V2              } from './modules.nf' 
 
@@ -26,7 +28,7 @@ workflow {
     main: 
         log.info """
         SPLICESCAPE - PIPELINE (Paired)(DSL-2)
-        Version          : 1.8.0        
+        Version          : 2.0.0        
         ======================================
         Species          : ${params.species}
         Reads File       : ${params.reads_file}
@@ -64,7 +66,7 @@ workflow {
         sra_id = channel.fromPath(params.reads_file).splitText()
                                                         .map { line -> line.trim() }
                                                         .filter { line -> !line.isEmpty() }
-        
+
         // Downloading reads from FTP
         // GET_READ_FTP ( sra_id, params.outdir )
 
@@ -184,8 +186,22 @@ workflow {
         MAJIQ_VOILA_MODULIZE (
             params.outdir,
             params.species,
-            voila_modulize_combined
+            voila_modulize_combined,
+            params.majiq_cores
+        )
+
+        CREATE_DB (
+            params.species,
+            params.species_name,
+            params.db)
+
+        POPULATE_DB (
+            MAJIQ_VOILA_MODULIZE.out.majiq_results,
+            SGSEQ.out.sgseq_results, 
+            CREATE_DB.out.db_out, 
+            params.genomeGFF, 
+            params.species,
+            params.species_name
         )
 
 }
-// 

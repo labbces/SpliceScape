@@ -1,6 +1,4 @@
 // modules.nf
-// TODO
-// Escolher pegar reads pelo NCBI ou pelo Cloud
 
 process GET_READ_FTP {
     tag "${sra_accession}"
@@ -90,7 +88,7 @@ process RUN_BBDUK {
     rm -rf ${bbduk_log}
     """ : "true"
     
-    """
+    """control
     mkdir -p ${outdir}/reads/inspect/bbduk/
     mkdir -p ${outdir}/reads/scratch/clean/
 
@@ -110,7 +108,7 @@ process RUN_BBDUK {
 
 process WGET_DOWNLOADER {
     tag "${sra_accession}"
-    errorStrategy 'retry'
+    errorStrategy 'ignore'
     maxRetries 2
 
     input:
@@ -296,13 +294,27 @@ process SGSEQ {
     val outdir 
 
     output:
-    tuple val(sra_accession), path("${sra_accession}/SGSeq_${sra_accession}.csv"), path("${sra_accession}/SGSeq_coordinates_${sra_accession}.csv"), emit: sgseq_csv_sra    
+    tuple val ("SGSEQ"), 
+          val(sra_accession),
+          path("${sra_accession}_sgseq/"), emit: sgseq_results
+          
+
+    tuple val(sra_accession), 
+          path("${sra_accession}_sgseq/sgseq_A5SS.tsv"),
+          path("${sra_accession}_sgseq/sgseq_A3SS.tsv"),
+          path("${sra_accession}_sgseq/sgseq_RI.tsv"),
+          path("${sra_accession}_sgseq/sgseq_SE.tsv"),
+          path("${sra_accession}_sgseq/sgseq_MXE.tsv"),
+          path("${sra_accession}_sgseq/sgseq_AFE.tsv"),
+          path("${sra_accession}_sgseq/sgseq_ALE.tsv"),
+          path("${sra_accession}_sgseq/sgseq_constitutive.tsv"), emit: sgseq_csv_sra    
 
     script:
     def bam_file = "${outdir}/mapping/inspect/${sra_accession}/${species_name}_${sra_accession}_Aligned.sortedByCoord.out.bam"
-    def outPrefix = "${sra_accession}"
+    def outPrefix = "${sra_accession}_sgseq"
     """
-    SGSeq.R --gff "${genomeGFF_file}" --cores ${num_cores} --path_to_bam "${bam_file}" --sra_id "${sra_accession}" --out $outPrefix --libPaths "${r_libs_path}"
+    SGSeq_v2.2.R -g "${genomeGFF_file}" -c ${num_cores} -b "${bam_file}" -s "${sra_accession}" -o $outPrefix --lib_paths "${r_libs_path}"
+    
     """
 }
 
@@ -423,18 +435,30 @@ process MAJIQ_SG_COVERAGE{
 
 process MAJIQ_VOILA_MODULIZE{
     tag "${sra_accession} on ${species_name}"
-    errorStrategy 'ignore'
+    errorStrategy 'finish'
     publishDir "${params.outdir}/majiq/results/", mode: 'copy'
 
     input:
     val outdir
     val species_name
     tuple val(sra_accession), path(build_file), path(psi_file), path(sg_coverage_file)
+    val majiq_cores
 
     output:
-    tuple val("${sra_accession}"), \
-          path("${sra_accession}/*")
+    tuple val("MAJIQ"), \
+          val("${sra_accession}"), \
+          path("${sra_accession}_majiq/"), emit: majiq_results
 
+        tuple val(sra_accession), 
+          path("${sra_accession}_majiq/alt5prime.tsv"),
+          path("${sra_accession}_majiq/alt3prime.tsv"),
+          path("${sra_accession}_majiq/alternative_intron.tsv"),
+          path("${sra_accession}_majiq/tandem_cassette.tsv"),
+          path("${sra_accession}_majiq/cassette.tsv"),
+          path("${sra_accession}_majiq/mutually_exclusive.tsv"),
+          path("${sra_accession}_majiq/alternate_first_exon.tsv"),
+          path("${sra_accession}_majiq/alternate_last_exon.tsv"),
+          path("${sra_accession}_majiq/constitutive.tsv"), emit: majiq_csv_sra    
 
     script:
     def majiq_build = "${outdir}/majiq/scratch/${sra_accession}/build/build_${species_name}_${sra_accession}_sg.zarr"
@@ -450,9 +474,53 @@ process MAJIQ_VOILA_MODULIZE{
     """
     mkdir -p ${outdir}/majiq/results
     
-    voila modulize ${majiq_build} ${majiq_psi}  ${majiq_sg_coverage}  -d ${sra_accession} --keep-constitutive --show-all --show-read-counts --overwrite && \\
+    voila modulize ${majiq_build} ${majiq_psi}  ${majiq_sg_coverage}  -d ${sra_accession}_majiq -j ${majiq_cores} --keep-constitutive --show-all --show-read-counts --overwrite && \\
     ${cleanup}
     """
 }
 
-// process CLEAN_BAM{ do it when adding to db? not do it at all?
+process CREATE_DB{
+    publishDir "${params.outdir}/db/", mode: 'copy' // IS THAT RIGHT?
+    input:
+    val species_code
+    val species_name
+    val db
+
+    output:
+    tuple val("${db}"), path("db_created.ok"), emit: db_out
+
+    script:
+    """
+    merging_outputs.py --db ${db} --spp "${species_name}" --genome_version ${species_code} && \\
+    touch db_created.ok
+    """
+}
+
+process POPULATE_DB{
+    maxForks 1
+    errorStrategy 'finish'
+    publishDir "${params.outdir}/db/", mode: 'copy' // IS THAT RIGHT?
+
+    input:
+    tuple val(majiq), val(sra_accession_majiq), path(path_to_results_majiq) // get this from pevious processes
+    tuple val(sgseq), val(sra_accession_sgseq), path(path_to_results_sgseq)
+    tuple val(db), path(db_ok) // from create db
+    path genomeGFF_file  // ref_exons
+    val species_code
+    val species_name
+
+    output: // update
+    path("db_*.ok"), emit: populate_ok
+
+    script:
+    """
+    majiq_Parser.py --results_dir ${path_to_results_majiq} --db $db --ref_exons ${genomeGFF_file}  --genome_version ${species_code} --species "${species_name}" --sra_id ${sra_accession_majiq} && \\
+    touch db_majiq_${sra_accession_majiq}.ok
+    sleep 1
+    
+    SGSeq_parser.py --results_dir ${path_to_results_sgseq} --db $db --ref_exons ${genomeGFF_file}  --genome_version ${species_code} --species "${species_name}" --sra_id ${sra_accession_sgseq} && \\
+    touch db_sgseq_${sra_accession_sgseq}.ok
+    sleep 1
+    """
+}
+
