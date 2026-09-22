@@ -1,20 +1,80 @@
 #!/usr/bin/env Rscript
 
+# -----------------------
+# User inputs
+# -----------------------
+#sra_id <- "SRR12642286"
+#bam_file_path <- "/Storage/data2/riano/testManualSpliceScape/SRR12642286/03_star/ath_SRR12642286.Aligned.sortedByCoord.out.bam"
+#gtf_path <- "/Storage/data2/riano/data/Athaliana_447_Araport11.gene_exons.gtf"
+#cores <- 30
+#output_dir <- "/home/bia.estevam/landscapeSplicingGrasses/testing_splicescape_improvements/SGSeq_parser/output"
+
+args <- commandArgs(trailingOnly = FALSE)
+lib_idx <- which(args == "--lib_paths")
+if (length(lib_idx) > 0) {
+  .libPaths(c(args[lib_idx + 1], .libPaths()))
+}
+
+library(optparse)
+
+option_list <- list(
+  make_option(c("-s", "--sra_id"),
+              type = "character",
+              help = "SRA ID (ex: SRR12642286)"),
+
+  make_option(c("-b", "--bam"),
+              type = "character",
+              help = "Path to BAM file"),
+
+  make_option(c("-g", "--gtf"),
+              type = "character",
+              help = "Path to GTF file"),
+
+  make_option(c("-c", "--cores"),
+              type = "integer",
+              default = 4,
+              help = "Number of avaiable core [default: %default]"),
+
+  make_option(c("-o", "--output_dir"),
+              type = "character",
+              help = "output directory"),
+  
+  make_option(c("-l", "--lib_paths"),
+            type = "character",
+            default = NULL,
+            help = "Custom R library path (optional)")
+)
+
+opt_parser <- OptionParser(
+  option_list = option_list,
+  description = "SGSeq parser for splicing analysis"
+)
+opt <- parse_args(opt_parser)
+
+# Validação: checar se argumentos obrigatórios foram passados
+required <- c("sra_id", "bam", "gtf", "output_dir")
+missing <- required[!required %in% names(opt) | sapply(required, function(x) is.null(opt[[x]]))]
+if (length(missing) > 0) {
+  print_help(opt_parser)
+  stop(paste("Required files missing:", paste(missing, collapse = ", ")))
+}
+
+sra_id        <- opt$sra_id
+bam_file_path <- opt$bam
+gtf_path      <- opt$gtf
+cores         <- opt$cores
+output_dir    <- opt$output_dir
+
+if (!is.null(opt$lib_paths)) {
+  .libPaths(c(opt$lib_paths, .libPaths()))
+}
+
 suppressPackageStartupMessages({
   library(GenomicFeatures)
   library(SGSeq)
   library(txdbmaker)
   library(GenomicRanges)
 })
-
-# -----------------------
-# User inputs
-# -----------------------
-sra_id <- "SRR12642286"
-bam_file_path <- "/Storage/data2/riano/testManualSpliceScape/SRR12642286/03_star/ath_SRR12642286.Aligned.sortedByCoord.out.bam"
-gtf_path <- "/Storage/data2/riano/data/Athaliana_447_Araport11.gene_exons.gtf"
-cores <- 30
-output_dir <- "/home/bia.estevam/landscapeSplicingGrasses/testing_splicescape_improvements/SGSeq_parser/output"
 
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
@@ -105,7 +165,7 @@ get_sample_vec <- function(assay_obj, sample_name) {
 # -----------------------
 # Build TxDb / TxFeatures
 # -----------------------
-txdb <- txdbmaker::makeTxDbFromGFF(gtf_path, format = "gtf")
+txdb <- txdbmaker::makeTxDbFromGFF(gtf_path, format = "auto")
 txFeatures <- convertToTxFeatures(txdb)
 
 # -----------------------
@@ -463,79 +523,96 @@ write.table(
 # -----------------------
 # MXE
 # -----------------------
+# -----------------------
+# MXE
+# -----------------------
 flat_mcols_MXE <- flat_mcols[flat_mcols$variantType == "MXE", , drop = FALSE]
 
-rows_list <- vector("list", nrow(flat_mcols_MXE))
+if (nrow(flat_mcols_MXE) == 0) {
+  warning("No MXE events found for sample: ", sra_id)
+  Jdf_MXE <- data.frame(
+      seqnames        = character(),
+      start           = integer(),
+      end             = integer(),
+      strand          = character(),
+      featureID       = integer(),
+      key             = character(),
+      PSI             = numeric(),
+      countsVariant5p = numeric(),
+      countsVariant3p = numeric(),
+      event_type      = character(),
+      geneID          = character(),
+      eventID         = character(),
+      geneName        = character(),
+      event_id        = character(),
+      stringsAsFactors = FALSE)
+} else {
+  rows_list <- vector("list", nrow(flat_mcols_MXE))
 
-for (i in seq_len(nrow(flat_mcols_MXE))) {
-  fID_5p <- as.integer(trimws(flat_mcols_MXE$featureID5p[i]))
-  fID_3p <- as.integer(trimws(flat_mcols_MXE$featureID3p[i]))
+  for (i in seq_len(nrow(flat_mcols_MXE))) {
+    fID_5p <- as.integer(trimws(flat_mcols_MXE$featureID5p[i]))
+    fID_3p <- as.integer(trimws(flat_mcols_MXE$featureID3p[i]))
 
-  junc_5p <- Jdf[Jdf$featureID == fID_5p, , drop = FALSE]
-  junc_3p <- Jdf[Jdf$featureID == fID_3p, , drop = FALSE]
+    junc_5p <- Jdf[Jdf$featureID == fID_5p, , drop = FALSE]
+    junc_3p <- Jdf[Jdf$featureID == fID_3p, , drop = FALSE]
 
-  if (nrow(junc_5p) == 0 || nrow(junc_3p) == 0) {
-    warning("MXE row ", i, ": featureID not found in Jdf")
-    next
+    if (nrow(junc_5p) == 0 || nrow(junc_3p) == 0) {
+      warning("MXE row ", i, ": featureID not found in Jdf")
+      next
+    }
+
+    rows_list[[i]] <- rbind(
+      data.frame(
+        seqnames        = junc_5p$seqnames,
+        start           = junc_5p$start,
+        end             = junc_5p$end,
+        strand          = junc_5p$strand,
+        featureID       = junc_5p$featureID,
+        key             = junc_5p$key,
+        PSI             = flat_mcols_MXE$PSI[i],
+        countsVariant5p = flat_mcols_MXE$countsVariant5p[i],
+        countsVariant3p = flat_mcols_MXE$countsVariant3p[i],
+        event_type      = "MXE",
+        geneID          = flat_mcols_MXE$geneID[i],
+        eventID         = flat_mcols_MXE$eventID[i],
+        geneName        = flat_mcols_MXE$geneName[i],
+        stringsAsFactors = FALSE
+      ),
+      data.frame(
+        seqnames        = junc_3p$seqnames,
+        start           = junc_3p$start,
+        end             = junc_3p$end,
+        strand          = junc_3p$strand,
+        featureID       = junc_3p$featureID,
+        key             = junc_3p$key,
+        PSI             = flat_mcols_MXE$PSI[i],
+        countsVariant5p = flat_mcols_MXE$countsVariant5p[i],
+        countsVariant3p = flat_mcols_MXE$countsVariant3p[i],
+        event_type      = "MXE",
+        geneID          = flat_mcols_MXE$geneID[i],
+        eventID         = flat_mcols_MXE$eventID[i],
+        geneName        = flat_mcols_MXE$geneName[i],
+        stringsAsFactors = FALSE
+      )
+    )
   }
 
-  # One row per junction (long format)
-  # Both junctions share the same PSI, counts, geneID, eventID
-  rows_list[[i]] <- rbind(
-    data.frame(
-      seqnames        = junc_5p$seqnames,
-      start           = junc_5p$start,
-      end             = junc_5p$end,
-      strand          = junc_5p$strand,
-      featureID       = junc_5p$featureID,
-      key             = junc_5p$key,
-      PSI             = flat_mcols_MXE$PSI[i],
-      countsVariant5p = flat_mcols_MXE$countsVariant5p[i],
-      countsVariant3p = flat_mcols_MXE$countsVariant3p[i],
-      event_type      = "MXE",
-      geneID          = flat_mcols_MXE$geneID[i],
-      eventID         = flat_mcols_MXE$eventID[i],
-      geneName        = flat_mcols_MXE$geneName[i],
-      stringsAsFactors = FALSE
-    ),
-    data.frame(
-      seqnames        = junc_3p$seqnames,
-      start           = junc_3p$start,
-      end             = junc_3p$end,
-      strand          = junc_3p$strand,
-      featureID       = junc_3p$featureID,
-      key             = junc_3p$key,
-      PSI             = flat_mcols_MXE$PSI[i],
-      countsVariant5p = flat_mcols_MXE$countsVariant5p[i],
-      countsVariant3p = flat_mcols_MXE$countsVariant3p[i],
-      event_type      = "MXE",
-      geneID          = flat_mcols_MXE$geneID[i],
-      eventID         = flat_mcols_MXE$eventID[i],
-      geneName        = flat_mcols_MXE$geneName[i],
-      stringsAsFactors = FALSE
+  Jdf_MXE <- do.call(rbind, rows_list[!sapply(rows_list, is.null)])
+
+  Jdf_MXE$event_id <- NA_character_
+  event_keys <- unique(paste(Jdf_MXE$geneID, Jdf_MXE$eventID, sep = "_"))
+  for (k in event_keys) {
+    rows <- which(paste(Jdf_MXE$geneID, Jdf_MXE$eventID, sep = "_") == k)
+    Jdf_MXE$event_id[rows] <- paste(
+      Jdf_MXE$seqnames[rows[1]],
+      Jdf_MXE$strand[rows[1]],
+      min(Jdf_MXE$start[rows]),
+      max(Jdf_MXE$end[rows]),
+      sep = "_"
     )
-  )
+  }
+  Jdf_MXE <- Jdf_MXE[order(Jdf_MXE$geneID, Jdf_MXE$eventID, Jdf_MXE$start), ]
 }
-
-Jdf_MXE <- do.call(rbind, rows_list[!sapply(rows_list, is.null)])
-
-# event_id: shared anchor coordinates (min start and max end of the event)
-# Built per geneID+eventID grouping
-Jdf_MXE$event_id <- NA_character_
-event_keys <- unique(paste(Jdf_MXE$geneID, Jdf_MXE$eventID, sep = "_"))
-
-for (k in event_keys) {
-  rows <- which(paste(Jdf_MXE$geneID, Jdf_MXE$eventID, sep = "_") == k)
-  Jdf_MXE$event_id[rows] <- paste(
-    Jdf_MXE$seqnames[rows[1]],
-    Jdf_MXE$strand[rows[1]],
-    min(Jdf_MXE$start[rows]),
-    max(Jdf_MXE$end[rows]),
-    sep = "_"
-  )
-}
-
-Jdf_MXE <- Jdf_MXE[order(Jdf_MXE$geneID, Jdf_MXE$eventID, Jdf_MXE$start), ]
 
 write.table(
   Jdf_MXE,
@@ -543,51 +620,67 @@ write.table(
   sep = "\t", quote = FALSE, row.names = FALSE
 )
 
-# cat("=== MXE junction table summary ===\n")
-# cat("Total junction rows:", nrow(Jdf_MXE), "\n")
-# cat("Total events:       ", length(unique(paste(Jdf_MXE$geneID, Jdf_MXE$eventID))), "\n")
-# cat("Output written to:  ", file.path(output_dir, "sgseq_MXE_junctions.tsv"), "\n")
-
+# -----------------------
+# AFE
+# -----------------------
 # -----------------------
 # AFE
 # -----------------------
 flat_mcols_AFE <- flat_mcols[flat_mcols$variantType == "AFE", , drop = FALSE]
 
-rows_list <- vector("list", nrow(flat_mcols_AFE))
-
-for (i in seq_len(nrow(flat_mcols_AFE))) {
-  # Split comma-separated featureID3p values
-  fIDs <- as.integer(trimws(strsplit(flat_mcols_AFE$featureID3p[i], ",")[[1]]))
-  fIDs <- fIDs[!is.na(fIDs)]
-
-  if (length(fIDs) == 0) next
-
-  idx   <- match(fIDs, Jdf$featureID)
-  valid <- !is.na(idx)
-
-  if (!any(valid)) next
-
-  rows_list[[i]] <- data.frame(
-    seqnames   = Jdf$seqnames[idx[valid]],
-    start      = Jdf$start[idx[valid]],
-    end        = Jdf$end[idx[valid]],
-    strand     = Jdf$strand[idx[valid]],
-    featureID  = fIDs[valid],
-    key        = Jdf$key[idx[valid]],
-    PSI        = flat_mcols_AFE$PSI[i],
-    countsVariant5p = flat_mcols_AFE$countsVariant5p[i],
-    countsVariant3p = flat_mcols_AFE$countsVariant3p[i],
-    event_type = "AFE",
-    geneID     = flat_mcols_AFE$geneID[i],
-    eventID    = flat_mcols_AFE$eventID[i],
-    geneName   = flat_mcols_AFE$geneName[i],
+if (nrow(flat_mcols_AFE) == 0) {
+  warning("No AFE events found for sample: ", sra_id)
+  Jdf_AFE <- data.frame(
+    seqnames        = character(),
+    start           = integer(),
+    end             = integer(),
+    strand          = character(),
+    featureID       = integer(),
+    key             = character(),
+    PSI             = numeric(),
+    countsVariant5p = numeric(),
+    countsVariant3p = numeric(),
+    event_type      = character(),
+    geneID          = character(),
+    eventID         = character(),
+    geneName        = character(),
     stringsAsFactors = FALSE
   )
+} else {
+  rows_list <- vector("list", nrow(flat_mcols_AFE))
+
+  for (i in seq_len(nrow(flat_mcols_AFE))) {
+    fIDs <- as.integer(trimws(strsplit(flat_mcols_AFE$featureID3p[i], ",")[[1]]))
+    fIDs <- fIDs[!is.na(fIDs)]
+
+    if (length(fIDs) == 0) next
+
+    idx   <- match(fIDs, Jdf$featureID)
+    valid <- !is.na(idx)
+
+    if (!any(valid)) next
+
+    rows_list[[i]] <- data.frame(
+      seqnames        = Jdf$seqnames[idx[valid]],
+      start           = Jdf$start[idx[valid]],
+      end             = Jdf$end[idx[valid]],
+      strand          = Jdf$strand[idx[valid]],
+      featureID       = fIDs[valid],
+      key             = Jdf$key[idx[valid]],
+      PSI             = flat_mcols_AFE$PSI[i],
+      countsVariant5p = flat_mcols_AFE$countsVariant5p[i],
+      countsVariant3p = flat_mcols_AFE$countsVariant3p[i],
+      event_type      = "AFE",
+      geneID          = flat_mcols_AFE$geneID[i],
+      eventID         = flat_mcols_AFE$eventID[i],
+      geneName        = flat_mcols_AFE$geneName[i],
+      stringsAsFactors = FALSE
+    )
+  }
+
+  Jdf_AFE <- do.call(rbind, rows_list[!sapply(rows_list, is.null)])
+  Jdf_AFE <- Jdf_AFE[order(Jdf_AFE$geneID, Jdf_AFE$eventID, Jdf_AFE$start), ]
 }
-
-Jdf_AFE <- do.call(rbind, rows_list[!sapply(rows_list, is.null)])
-
-Jdf_AFE <- Jdf_AFE[order(Jdf_AFE$geneID, Jdf_AFE$eventID, Jdf_AFE$start), ]
 
 write.table(
   Jdf_AFE,
@@ -595,50 +688,67 @@ write.table(
   sep = "\t", quote = FALSE, row.names = FALSE
 )
 
-# cat("=== AFE junction table summary ===\n")
-# cat("Total junction rows:", nrow(Jdf_AFE), "\n")
-# cat("Total events:       ", length(unique(paste(Jdf_AFE$geneID, Jdf_AFE$eventID))), "\n")
-# cat("Output written to:  ", file.path(output_dir, "sgseq_AFE_junctions.tsv"), "\n")
-
+# -----------------------
+# ALE
+# -----------------------
 # -----------------------
 # ALE
 # -----------------------
 flat_mcols_ALE <- flat_mcols[flat_mcols$variantType == "ALE", , drop = FALSE]
 
-rows_list <- vector("list", nrow(flat_mcols_ALE))
-
-for (i in seq_len(nrow(flat_mcols_ALE))) {
-  # Split comma-separated featureID5p values
-  fIDs <- as.integer(trimws(strsplit(flat_mcols_ALE$featureID5p[i], ",")[[1]]))
-  fIDs <- fIDs[!is.na(fIDs)]
-
-  if (length(fIDs) == 0) next
-
-  idx   <- match(fIDs, Jdf$featureID)
-  valid <- !is.na(idx)
-
-  if (!any(valid)) next
-
-  rows_list[[i]] <- data.frame(
-    seqnames   = Jdf$seqnames[idx[valid]],
-    start      = Jdf$start[idx[valid]],
-    end        = Jdf$end[idx[valid]],
-    strand     = Jdf$strand[idx[valid]],
-    featureID  = fIDs[valid],
-    key        = Jdf$key[idx[valid]],
-    PSI        = flat_mcols_ALE$PSI[i],
-    countsVariant5p = flat_mcols_ALE$countsVariant5p[i],
-    countsVariant3p = flat_mcols_ALE$countsVariant3p[i],
-    event_type = "ALE",
-    geneID     = flat_mcols_ALE$geneID[i],
-    eventID    = flat_mcols_ALE$eventID[i],
-    geneName   = flat_mcols_ALE$geneName[i],
+if (nrow(flat_mcols_ALE) == 0) {
+  warning("No ALE events found for sample: ", sra_id)
+  Jdf_ALE <- data.frame(
+    seqnames        = character(),
+    start           = integer(),
+    end             = integer(),
+    strand          = character(),
+    featureID       = integer(),
+    key             = character(),
+    PSI             = numeric(),
+    countsVariant5p = numeric(),
+    countsVariant3p = numeric(),
+    event_type      = character(),
+    geneID          = character(),
+    eventID         = character(),
+    geneName        = character(),
     stringsAsFactors = FALSE
   )
-}
+} else {
+  rows_list <- vector("list", nrow(flat_mcols_ALE))
 
-Jdf_ALE <- do.call(rbind, rows_list[!sapply(rows_list, is.null)])
-Jdf_ALE <- Jdf_ALE[order(Jdf_ALE$geneID, Jdf_ALE$eventID, Jdf_ALE$start), ]
+  for (i in seq_len(nrow(flat_mcols_ALE))) {
+    fIDs <- as.integer(trimws(strsplit(flat_mcols_ALE$featureID5p[i], ",")[[1]]))
+    fIDs <- fIDs[!is.na(fIDs)]
+
+    if (length(fIDs) == 0) next
+
+    idx   <- match(fIDs, Jdf$featureID)
+    valid <- !is.na(idx)
+
+    if (!any(valid)) next
+
+    rows_list[[i]] <- data.frame(
+      seqnames        = Jdf$seqnames[idx[valid]],
+      start           = Jdf$start[idx[valid]],
+      end             = Jdf$end[idx[valid]],
+      strand          = Jdf$strand[idx[valid]],
+      featureID       = fIDs[valid],
+      key             = Jdf$key[idx[valid]],
+      PSI             = flat_mcols_ALE$PSI[i],
+      countsVariant5p = flat_mcols_ALE$countsVariant5p[i],
+      countsVariant3p = flat_mcols_ALE$countsVariant3p[i],
+      event_type      = "ALE",
+      geneID          = flat_mcols_ALE$geneID[i],
+      eventID         = flat_mcols_ALE$eventID[i],
+      geneName        = flat_mcols_ALE$geneName[i],
+      stringsAsFactors = FALSE
+    )
+  }
+
+  Jdf_ALE <- do.call(rbind, rows_list[!sapply(rows_list, is.null)])
+  Jdf_ALE <- Jdf_ALE[order(Jdf_ALE$geneID, Jdf_ALE$eventID, Jdf_ALE$start), ]
+}
 
 write.table(
   Jdf_ALE,
