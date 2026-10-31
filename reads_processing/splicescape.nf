@@ -20,6 +20,7 @@ include { MAJIQ_SG_COVERAGE          } from './modules.nf'
 include { MAJIQ_VOILA_MODULIZE       } from './modules.nf'
 include { CREATE_DB                  } from './modules.nf'
 include { POPULATE_DB                } from './modules.nf'
+include { FINALIZE_SAMPLE             } from './modules.nf'
 // include { MAJIQ_SETTING_V2          } from './modules.nf'
 // include { MAJIQ_RUN_V2              } from './modules.nf' 
 
@@ -63,9 +64,21 @@ workflow {
         genome_index_ch = GENOME_GENERATE_STAR.out.genome_index_dir
         
         // Channel with read IDs
+        // A permit is acquired before admitting a sample to download.
+        // The permit is released only after its complete lifecycle.
+        // Admission happens on the Nextflow runtime, not in an SGE job.
+        def maximum = (params.max_active_samples ?: 2) as int
+        if (maximum < 1) error 'max_active_samples must be >= 1'
+        def admissionSlots = new java.util.concurrent.Semaphore(maximum, true)
+
         sra_id = channel.fromPath(params.reads_file).splitText()
-                                                        .map { line -> line.trim() }
-                                                        .filter { line -> !line.isEmpty() }
+            .map { line -> line.trim() }
+            .filter { line -> !line.isEmpty() }
+            .map { sample ->
+                admissionSlots.acquire()
+                log.info "Admitted sample: ${sample}"
+                sample
+            }
 
         // Downloading reads from FTP
         // GET_READ_FTP ( sra_id, params.outdir )
@@ -216,5 +229,17 @@ workflow {
             params.species,
             params.species_name
         )
+
+        // A slot is returned only after both branches, database import and
+        // optional BAM cleanup are complete. All sample IDs stay paired.
+        FINALIZE_SAMPLE(
+            POPULATE_DB.out.populate_ok,
+            params.outdir,
+            params.species
+        )
+        FINALIZE_SAMPLE.out.completed.subscribe { sample, marker ->
+            log.info "Completed sample: ${sample}; admitting next sample"
+            admissionSlots.release()
+        }
 
 }
