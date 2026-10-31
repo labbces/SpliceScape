@@ -61,7 +61,7 @@ workflow {
             params.threads, 
             params.species)
         
-        genome_index_ch = GENOME_GENERATE_STAR.out.genome_index_dir
+        genome_index_ch = GENOME_GENERATE_STAR.out.genome_index_dir.first()
         
         // Channel with read IDs
         // A permit is acquired before admitting a sample to download.
@@ -160,15 +160,17 @@ workflow {
             params.outdir 
         )
     
+        annotation_ch = MAJIQ_ANNOTATION_DB.out.annotation_db.first()
+
         MAJIQ_SJ (
             MAPPING_STAR.out.bam_sra_tuple, 
             params.species,
             params.outdir,
-            MAJIQ_ANNOTATION_DB.out.annotation_db,
+            annotation_ch,
         )
 
         MAJIQ_BUILD (
-            MAJIQ_ANNOTATION_DB.out.annotation_db,
+            annotation_ch,
             MAJIQ_SJ.out.sj_file,
             params.outdir, 
             params.species
@@ -224,7 +226,7 @@ workflow {
 
         POPULATE_DB (
             paired_results,
-            CREATE_DB.out.db_out,
+            CREATE_DB.out.db_out.first(),
             params.genomeGFF,
             params.species,
             params.species_name
