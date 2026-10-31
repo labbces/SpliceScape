@@ -502,8 +502,7 @@ process POPULATE_DB{
     publishDir "${params.outdir}/db/", mode: 'copy' // IS THAT RIGHT?
 
     input:
-    tuple val(majiq), val(sra_accession_majiq), path(path_to_results_majiq) // get this from pevious processes
-    tuple val(sgseq), val(sra_accession_sgseq), path(path_to_results_sgseq)
+    tuple val(sra_accession), path(path_to_results_majiq), path(path_to_results_sgseq)
     tuple val(db), path(db_ok) // from create db
     path genomeGFF_file  // ref_exons
     val species_code
@@ -514,12 +513,12 @@ process POPULATE_DB{
 
     script:
     """
-    majiq_Parser.py --results_dir ${path_to_results_majiq} --db $db --ref_exons ${genomeGFF_file}  --genome_version ${species_code} --species "${species_name}" --sra_id ${sra_accession_majiq} && \\
-    touch db_majiq_${sra_accession_majiq}.ok
+    majiq_Parser.py --results_dir ${path_to_results_majiq} --db $db --ref_exons ${genomeGFF_file}  --genome_version ${species_code} --species "${species_name}" --sra_id ${sra_accession} && \\
+    touch db_majiq_${sra_accession}.ok
     sleep 1
     
-    SGSeq_parser.py --results_dir ${path_to_results_sgseq} --db $db --ref_exons ${genomeGFF_file}  --genome_version ${species_code} --species "${species_name}" --sra_id ${sra_accession_sgseq} && \\
-    touch db_sgseq_${sra_accession_sgseq}.ok
+    SGSeq_parser.py --results_dir ${path_to_results_sgseq} --db $db --ref_exons ${genomeGFF_file}  --genome_version ${species_code} --species "${species_name}" --sra_id ${sra_accession} && \\
+    touch db_sgseq_${sra_accession}.ok
     sleep 1
     """
 }
