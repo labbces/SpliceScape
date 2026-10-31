@@ -195,11 +195,24 @@ workflow {
             params.species_name,
             params.db)
 
+        // Pair outputs by sample ID, rather than relying on arrival order.
+        // MAJIQ and SGSeq remain independent and can run concurrently.
+        majiq_by_sample = MAJIQ_VOILA_MODULIZE.out.majiq_results
+            .map { tool, sample, results -> tuple(sample, results) }
+        sgseq_by_sample = SGSEQ.out.sgseq_results
+            .map { tool, sample, results -> tuple(sample, results) }
+
+        paired_results = majiq_by_sample.join(
+            sgseq_by_sample,
+            by: 0,
+            failOnDuplicate: true,
+            failOnMismatch: true
+        )
+
         POPULATE_DB (
-            MAJIQ_VOILA_MODULIZE.out.majiq_results,
-            SGSEQ.out.sgseq_results, 
-            CREATE_DB.out.db_out, 
-            params.genomeGFF, 
+            paired_results,
+            CREATE_DB.out.db_out,
+            params.genomeGFF,
             params.species,
             params.species_name
         )
