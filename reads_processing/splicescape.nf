@@ -205,11 +205,6 @@ workflow {
             params.majiq_cores
         )
 
-        CREATE_DB (
-            params.species,
-            params.species_name,
-            params.db)
-
         // Pair outputs by sample ID, rather than relying on arrival order.
         // MAJIQ and SGSeq remain independent and can run concurrently.
         majiq_by_sample = MAJIQ_VOILA_MODULIZE.out.majiq_results
@@ -224,24 +219,41 @@ workflow {
             failOnMismatch: true
         )
 
-        POPULATE_DB (
+        // Release analysis capacity after MAJIQ and SGSeq finish, before import.
+        FINALIZE_SAMPLE(
             paired_results,
+            params.outdir,
+            params.species
+        )
+
+        analysis_complete = FINALIZE_SAMPLE.out.completed
+        analysis_complete.subscribe { sample, majiq, sgseq, marker ->
+            log.info "Analysis completed for ${sample}; admitting next sample"
+            admissionSlots.release()
+        }
+
+        // collect() is a batch barrier: it emits only after the entire
+        // upstream analysis channel closes. Import is therefore deferred
+        // until sample analysis has ended, not performed on the fly.
+        completed_batch = analysis_complete.collect()
+        batch_imports = completed_batch.flatMap { completed ->
+            completed.collect { sample, majiq, sgseq, marker ->
+                tuple(sample, majiq, sgseq)
+            }
+        }
+
+        CREATE_DB(
+            params.species,
+            params.species_name,
+            params.db
+        )
+
+        POPULATE_DB(
+            batch_imports,
             CREATE_DB.out.db_out.first(),
             params.genomeGFF,
             params.species,
             params.species_name
         )
-
-        // A slot is returned only after both branches, database import and
-        // optional BAM cleanup are complete. All sample IDs stay paired.
-        FINALIZE_SAMPLE(
-            POPULATE_DB.out.populate_ok,
-            params.outdir,
-            params.species
-        )
-        FINALIZE_SAMPLE.out.completed.subscribe { sample, marker ->
-            log.info "Completed sample: ${sample}; admitting next sample"
-            admissionSlots.release()
-        }
 
 }
