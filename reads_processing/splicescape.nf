@@ -136,6 +136,22 @@ workflow {
             params.outdir 
         )
 
+        // Record biological-tool failures even when the process exits zero
+        // after writing its explicit status file. No admission permits are
+        // released here: that requires a terminal outcome for the whole sample.
+        sgseq_outcomes = SGSEQ.out.status.map { sample, statusFile ->
+            def fields = statusFile.text.trim().split('\\t')
+            if (fields.size() != 4 || fields[0] != sample || fields[1] != 'SGSEQ') {
+                error "Malformed SGSeq status for ${sample}: ${statusFile}"
+            }
+            if (fields[2] == 'FAILED') {
+                log.warn "SAMPLE_STAGE_FAILED sample=${sample} stage=SGSEQ exit=${fields[3]}"
+            } else if (fields[2] != 'SUCCESS') {
+                error "Unknown SGSeq status: ${fields[2]}"
+            }
+            tuple(sample, fields[2])
+        }
+
         //MAJIQ_SETTING_V2 (
         //    SGSEQ.out.bam_passthrough, 
         //    params.species,
@@ -168,6 +184,20 @@ workflow {
             params.outdir,
             annotation_ch,
         )
+
+        // MAJIQ SJ failure is observable even though a failed command does
+        // not produce the success-only .ok marker consumed by MAJIQ_BUILD.
+        MAJIQ_SJ.out.status.subscribe { sample, statusFile ->
+            def fields = statusFile.text.trim().split('\\t')
+            if (fields.size() != 4 || fields[0] != sample || fields[1] != 'MAJIQ_SJ') {
+                error "Malformed MAJIQ SJ status for ${sample}: ${statusFile}"
+            }
+            if (fields[2] == 'FAILED') {
+                log.warn "SAMPLE_STAGE_FAILED sample=${sample} stage=MAJIQ_SJ exit=${fields[3]}"
+            } else if (fields[2] != 'SUCCESS') {
+                error "Unknown MAJIQ SJ status: ${fields[2]}"
+            }
+        }
 
         MAJIQ_BUILD (
             annotation_ch,
@@ -214,8 +244,15 @@ workflow {
         // MAJIQ and SGSeq remain independent and can run concurrently.
         majiq_by_sample = MAJIQ_VOILA_MODULIZE.out.majiq_results
             .map { tool, sample, results -> tuple(sample, results) }
+        // Only allow successful SGSeq outcomes into DB pairing. An ignored
+        // or missing result directory cannot be treated as a valid analysis.
         sgseq_by_sample = SGSEQ.out.sgseq_results
             .map { tool, sample, results -> tuple(sample, results) }
+            .join(sgseq_outcomes, by: 0)
+            .filter { sample, results, status ->
+                status == 'SUCCESS' && results != null
+            }
+            .map { sample, results, status -> tuple(sample, results) }
 
         paired_results = majiq_by_sample.join(
             sgseq_by_sample,
