@@ -38,6 +38,8 @@ workflow {
     assert samples.size() > maximum : 'Provide more samples than max_active_samples'
     assert samples.size() == samples.toSet().size() : 'Duplicate sample ID'
 
+    def expectedCount = samples.size() as int
+    log.info "EXPECTED_TERMINALS ${expectedCount}"
     SIMULATED_LIFECYCLE(Channel.fromList(samples))
 
     SIMULATED_LIFECYCLE.out.outcomes
@@ -48,7 +50,12 @@ workflow {
         }
         .collect()
         .subscribe { outcomes ->
-            assert outcomes.size() == samples.size() : 'Missing terminal outcomes'
-            log.info "ALL_TERMINAL ${outcomes.size()}/${samples.size()}"
+            def actualCount = outcomes.size() as int
+            log.info "COLLECTED_TERMINALS actual=${actualCount} expected=${expectedCount} contents=${outcomes}"
+            if (actualCount != expectedCount) {
+                log.error "TERMINAL_COUNT_MISMATCH ${actualCount}/${expectedCount}"
+            } else {
+                log.info "ALL_TERMINAL ${actualCount}/${expectedCount}"
+            }
         }
 }
