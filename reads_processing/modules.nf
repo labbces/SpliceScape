@@ -541,17 +541,22 @@ process POPULATE_DB{
  
 // Last stage of a sample lifecycle. Runs after both analyses and DB import.
 // Intermediate BAM removal is deliberately delayed until both branches end.
+// Finalize the analysis lifecycle before database import begins.
+// Both tool result directories are forwarded to the batch-wide import barrier.
 process FINALIZE_SAMPLE {
     tag "${sra_accession}"
     errorStrategy 'terminate'
 
     input:
-    tuple val(sra_accession), path(majiq_db_ok), path(sgseq_db_ok)
+    tuple val(sra_accession), path(majiq_results), path(sgseq_results)
     val outdir
     val species_name
 
     output:
-    tuple val(sra_accession), path("finished_${sra_accession}.ok"), emit: completed
+    tuple val(sra_accession),
+          path(majiq_results),
+          path(sgseq_results),
+          path("finished_${sra_accession}.ok"), emit: completed
 
     script:
     def bam = "${outdir}/mapping/inspect/${sra_accession}/${species_name}_${sra_accession}_Aligned.sortedByCoord.out.bam"
@@ -560,8 +565,8 @@ process FINALIZE_SAMPLE {
     """ : "true"
     """
     set -e
-    test -f "${majiq_db_ok}"
-    test -f "${sgseq_db_ok}"
+    test -d "${majiq_results}"
+    test -d "${sgseq_results}"
     ${cleanup}
     touch finished_${sra_accession}.ok
     """
