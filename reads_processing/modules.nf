@@ -521,13 +521,18 @@ process POPULATE_DB{
           path("db_sgseq_${sra_accession}.ok"), emit: populate_ok
 
     script:
+    // Select the Python interpreter explicitly from the JSON Conda environment.
+    def condaEnv = params.environment?.conda_env
+    if (!condaEnv) error "POPULATE_DB requires environment.conda_env in JSON"
+    def pythonExe = new File(condaEnv.toString(), 'bin/python').absolutePath
     """
+    test -x '${pythonExe}' || { echo 'Python interpreter not executable: ${pythonExe}' >&2; exit 1; }
     set -euo pipefail
 
-    majiq_Parser.py --results_dir ${path_to_results_majiq} --db "${db}" --ref_exons ${genomeGFF_file} --genome_version ${species_code} --species "${species_name}" --sra_id ${sra_accession}
+    '${pythonExe}' '${projectDir}/bin/majiq_Parser.py' --results_dir ${path_to_results_majiq} --db "${db}" --ref_exons ${genomeGFF_file} --genome_version ${species_code} --species "${species_name}" --sra_id ${sra_accession}
     touch db_majiq_${sra_accession}.ok
 
-    SGSeq_parser.py --results_dir ${path_to_results_sgseq} --db "${db}" --ref_exons ${genomeGFF_file} --genome_version ${species_code} --species "${species_name}" --sra_id ${sra_accession}
+    '${pythonExe}' '${projectDir}/bin/SGSeq_parser.py' --results_dir ${path_to_results_sgseq} --db "${db}" --ref_exons ${genomeGFF_file} --genome_version ${species_code} --species "${species_name}" --sra_id ${sra_accession}
     touch db_sgseq_${sra_accession}.ok
     """
 }
