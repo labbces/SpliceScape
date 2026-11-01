@@ -207,7 +207,7 @@ process ALTERNATIVE_RUN_BBDUK {
 
 process GENOME_GENERATE_STAR {
     tag "${species_name}"
-    publishDir "${params.backbonedir}/mapping/backbone/genomeGenerate",  mode: 'symlink'
+    publishDir "${params.backbonedir}/mapping/backbone/genomeGenerate", mode: 'symlink'
     errorStrategy 'finish'
 
     input:
@@ -221,14 +221,21 @@ process GENOME_GENERATE_STAR {
 
     script:
     def genDir = "${species_name}"
+    def annotationIsGff3 = genomeGFF_file.toString().toLowerCase().matches('.*\\.(gff|gff3)(\\.gz)?$')
+    def exonParentOption = annotationIsGff3 ? '--sjdbGTFtagExonParentTranscript Parent' : ''
     """
-    mkdir -p $genDir
+    set -e
+    mkdir -p ${genDir}
+
+    SA_INDEX=\\$(python3 '${projectDir}/bin/star_sa_index_nbases.py' '${genomeFASTA_file}')
 
     STAR --runThreadN ${num_threads} \\
         --runMode genomeGenerate \\
-        --genomeDir $genDir \\
+        --genomeDir ${genDir} \\
         --genomeFastaFiles ${genomeFASTA_file} \\
-        --sjdbGTFfile ${genomeGFF_file}
+        --sjdbGTFfile ${genomeGFF_file} \\
+        --genomeSAindexNbases \\$SA_INDEX \\
+        ${exonParentOption}
     """
 }
 
