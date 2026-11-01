@@ -1,4 +1,5 @@
 *nextflow*
+__pycache__/
 grasses/filtered
 *db
 merging_outputs/data
