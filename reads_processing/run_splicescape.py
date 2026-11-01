@@ -83,7 +83,31 @@ def main():
         cmd.append("-resume")
     cmd.extend(extra)
     print("Launching Nextflow with JSON-specified environment", flush=True)
-    return subprocess.run(cmd, cwd=HERE, env=env, check=False).returncode
+    result = subprocess.run(cmd, cwd=HERE, env=env, check=False)
+
+    # Preserve the Nextflow exit code. Report generation must not hide errors.
+    # Nextflow's trace lives in HERE by default (as configured in v2.config).
+    trace_path = HERE / "trace.txt"
+    reads_path = Path(settings["reads_file"]).expanduser()
+    if not reads_path.is_absolute():
+        reads_path = params_path.parent / reads_path
+    report_path = Path(settings["outdir"]).expanduser()
+    if not report_path.is_absolute():
+        report_path = params_path.parent / report_path
+    if trace_path.is_file() and reads_path.is_file():
+        report_cmd = [
+            env.get("SPLICESCAPE_PYTHON", sys.executable),
+            str(HERE / "bin" / "report_sample_failures.py"),
+            "--trace", str(trace_path),
+            "--samples", str(reads_path),
+            "--outdir", str(report_path / "logs"),
+        ]
+        summary = subprocess.run(report_cmd, cwd=HERE, env=env, check=False)
+        if summary.returncode:
+            print("WARNING: Sample failure report could not be generated", file=sys.stderr)
+    else:
+        print("WARNING: Nextflow trace or sample manifest unavailable; report skipped", file=sys.stderr)
+    return result.returncode
 
 
 if __name__ == "__main__":
