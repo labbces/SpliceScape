@@ -14,7 +14,7 @@ params.fail_samples = params.fail_samples ?: 'sample1,sample3'
 
 process SIMULATED_LIFECYCLE {
     tag "${sample}"
-    maxForks { params.max_active_samples as int }
+    maxForks (params.max_active_samples as int)
 
     input:
     val sample
