@@ -227,14 +227,14 @@ process GENOME_GENERATE_STAR {
     set -e
     mkdir -p ${genDir}
 
-    SA_INDEX=\\$(python3 '${projectDir}/bin/star_sa_index_nbases.py' '${genomeFASTA_file}')
+    SA_INDEX=\$(python3 '${projectDir}/bin/star_sa_index_nbases.py' '${genomeFASTA_file}')
 
     STAR --runThreadN ${num_threads} \\
         --runMode genomeGenerate \\
         --genomeDir ${genDir} \\
         --genomeFastaFiles ${genomeFASTA_file} \\
         --sjdbGTFfile ${genomeGFF_file} \\
-        --genomeSAindexNbases \\$SA_INDEX \\
+        --genomeSAindexNbases \$SA_INDEX \\
         ${exonParentOption}
     """
 }
