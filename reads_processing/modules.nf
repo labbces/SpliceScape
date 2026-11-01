@@ -505,7 +505,7 @@ process CREATE_DB{
 
 process POPULATE_DB{
     maxForks 1
-    errorStrategy 'finish'
+    errorStrategy 'terminate'
     publishDir "${params.outdir}/db/", mode: 'copy' // IS THAT RIGHT?
 
     input:
@@ -522,13 +522,13 @@ process POPULATE_DB{
 
     script:
     """
-    majiq_Parser.py --results_dir ${path_to_results_majiq} --db $db --ref_exons ${genomeGFF_file}  --genome_version ${species_code} --species "${species_name}" --sra_id ${sra_accession} && \\
+    set -euo pipefail
+
+    majiq_Parser.py --results_dir ${path_to_results_majiq} --db "${db}" --ref_exons ${genomeGFF_file} --genome_version ${species_code} --species "${species_name}" --sra_id ${sra_accession}
     touch db_majiq_${sra_accession}.ok
-    sleep 1
-    
-    SGSeq_parser.py --results_dir ${path_to_results_sgseq} --db $db --ref_exons ${genomeGFF_file}  --genome_version ${species_code} --species "${species_name}" --sra_id ${sra_accession} && \\
+
+    SGSeq_parser.py --results_dir ${path_to_results_sgseq} --db "${db}" --ref_exons ${genomeGFF_file} --genome_version ${species_code} --species "${species_name}" --sra_id ${sra_accession}
     touch db_sgseq_${sra_accession}.ok
-    sleep 1
     """
 }
 
