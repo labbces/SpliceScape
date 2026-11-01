@@ -48,7 +48,7 @@ workflow {
             log.info "TERMINAL sample=${sample} status=${status}"
             tuple(sample, status)
         }
-        .collect()
+        .collect(flat: false)
         .subscribe { outcomes ->
             def actualCount = outcomes.size() as int
             log.info "COLLECTED_TERMINALS actual=${actualCount} expected=${expectedCount} contents=${outcomes}"
