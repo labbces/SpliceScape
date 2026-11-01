@@ -505,7 +505,7 @@ process CREATE_DB{
 
 process POPULATE_DB{
     maxForks 1
-    errorStrategy 'terminate'
+    errorStrategy 'ignore'
     publishDir "${params.outdir}/db/", mode: 'copy' // IS THAT RIGHT?
 
     input:
