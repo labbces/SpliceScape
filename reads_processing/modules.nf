@@ -289,7 +289,7 @@ process MAPPING_STAR {
 process SGSEQ {
     tag "${sra_accession} on ${species_name}"
     publishDir "${params.outdir}/SGSeq/results/", mode: 'copy'
-    errorStrategy 'ignore'
+    errorStrategy 'terminate'
 
     input:
     // tuple path(bam_dir_path), path(bam_index_file), path(bam_actual_file), val(sra_accession)
@@ -303,7 +303,7 @@ process SGSEQ {
     output:
     tuple val ("SGSEQ"), 
           val(sra_accession),
-          path("${sra_accession}_sgseq/"), emit: sgseq_results
+          path("${sra_accession}_sgseq/"), optional: true, emit: sgseq_results
           
 
     tuple val(sra_accession), 
@@ -314,13 +314,25 @@ process SGSEQ {
           path("${sra_accession}_sgseq/sgseq_MXE.tsv"),
           path("${sra_accession}_sgseq/sgseq_AFE.tsv"),
           path("${sra_accession}_sgseq/sgseq_ALE.tsv"),
-          path("${sra_accession}_sgseq/sgseq_constitutive.tsv"), emit: sgseq_csv_sra    
+          path("${sra_accession}_sgseq/sgseq_constitutive.tsv"), optional: true, emit: sgseq_csv_sra    
+
+    tuple val(sra_accession), path("status_sgseq_${sra_accession}.tsv"), emit: status
 
     script:
     def bam_file = "${outdir}/mapping/inspect/${sra_accession}/${species_name}_${sra_accession}_Aligned.sortedByCoord.out.bam"
     def outPrefix = "${sra_accession}_sgseq"
     """
+    set +e
     SGSeq_v2.2.R -g "${genomeGFF_file}" -c ${num_cores} -b "${bam_file}" -s "${sra_accession}" -o $outPrefix --lib_paths "${r_libs_path}"
+    code=\$?
+    if [ "\$code" -eq 0 ] && [ -d "${outPrefix}" ]; then
+      state=SUCCESS
+    else
+      state=FAILED
+      if [ "\$code" -eq 0 ]; then code=1; fi
+    fi
+    printf '%s\\t%s\\t%s\\t%s\\n' '${sra_accession}' SGSEQ "\$state" "\$code" > status_sgseq_${sra_accession}.tsv
+    exit 0
     
     """
 }
@@ -360,7 +372,9 @@ process MAJIQ_SJ {
     path annotation_db
 
     output:
-    tuple val("${sra_accession}"), path("bam_${species_name}_${sra_accession}.ok"), emit: sj_file
+    tuple val("${sra_accession}"), path("bam_${species_name}_${sra_accession}.ok"), optional: true, emit: sj_file
+
+    tuple val(sra_accession), path("status_majiq_sj_${sra_accession}.tsv"), emit: status
 
     script:
     def majiq_annotation = "${outdir}/majiq/backbone/annotation_${species_name}.zarr"
@@ -368,8 +382,17 @@ process MAJIQ_SJ {
     def bam_file = "${outdir}/mapping/inspect/${sra_accession}/${species_name}_${sra_accession}_Aligned.sortedByCoord.out.bam"
     """
     mkdir -p ${outdir}/majiq/scratch/${sra_accession}/sj
-    majiq-v3 sj ${bam_file} ${majiq_annotation} ${majiq_sj} --nthreads ${task.cpus} --overwrite && \\
-    touch bam_${species_name}_${sra_accession}.ok
+    set +e
+    majiq-v3 sj ${bam_file} ${majiq_annotation} ${majiq_sj} --nthreads ${task.cpus} --overwrite
+    code=\$?
+    if [ "\$code" -eq 0 ]; then
+      state=SUCCESS
+      touch bam_${species_name}_${sra_accession}.ok
+    else
+      state=FAILED
+    fi
+    printf '%s\\t%s\\t%s\\t%s\\n' '${sra_accession}' MAJIQ_SJ "\$state" "\$code" > status_majiq_sj_${sra_accession}.tsv
+    exit 0
     """
 }
 
