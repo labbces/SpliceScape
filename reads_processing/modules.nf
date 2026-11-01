@@ -368,7 +368,7 @@ process MAJIQ_SJ {
     def bam_file = "${outdir}/mapping/inspect/${sra_accession}/${species_name}_${sra_accession}_Aligned.sortedByCoord.out.bam"
     """
     mkdir -p ${outdir}/majiq/scratch/${sra_accession}/sj
-    majiq-v3 sj ${bam_file} ${majiq_annotation} ${majiq_sj} --nthreads ${majiq_cores} --overwrite && \\
+    majiq-v3 sj ${bam_file} ${majiq_annotation} ${majiq_sj} --nthreads ${task.cpus} --overwrite && \\
     touch bam_${species_name}_${sra_accession}.ok
     """
 }
@@ -391,7 +391,7 @@ process MAJIQ_BUILD{
     def majiq_sj = "${outdir}/majiq/scratch/${sra_accession}/sj/${species_name}_${sra_accession}.Aligned.sortedByCoord.out.bam.sj"
     """
     mkdir -p ${outdir}/majiq/scratch/${sra_accession}/build
-    majiq-v3 build ${majiq_annotation} ${majiq_build} --sjs ${majiq_sj} --nthreads ${majiq_cores} --overwrite && \\
+    majiq-v3 build ${majiq_annotation} ${majiq_build} --sjs ${majiq_sj} --nthreads ${task.cpus} --overwrite && \\
     touch build_${species_name}_${sra_accession}_sg.ok
     """
 }
@@ -413,7 +413,7 @@ process MAJIQ_PSI {
     def majiq_sj = "${outdir}/majiq/scratch/${sra_accession}/sj/${species_name}_${sra_accession}.Aligned.sortedByCoord.out.bam.sj"
     """
     mkdir -p ${outdir}/majiq/scratch/${sra_accession}/psi
-    majiq-v3 psi-coverage ${majiq_build} ${majiq_psi} ${majiq_sj} --nthreads ${majiq_cores} --overwrite && \\
+    majiq-v3 psi-coverage ${majiq_build} ${majiq_psi} ${majiq_sj} --nthreads ${task.cpus} --overwrite && \\
     touch psi_${species_name}_${sra_accession}.ok
     """
 }
@@ -435,7 +435,7 @@ process MAJIQ_SG_COVERAGE{
     def majiq_sj = "${outdir}/majiq/scratch/${sra_accession}/sj/${species_name}_${sra_accession}.Aligned.sortedByCoord.out.bam.sj"
     """
     mkdir -p ${outdir}/majiq/scratch/${sra_accession}/sg_coverage
-    majiq-v3 sg-coverage ${majiq_build} ${majiq_sg_coverage} ${majiq_sj} --nthreads ${majiq_cores} --overwrite && \\
+    majiq-v3 sg-coverage ${majiq_build} ${majiq_sg_coverage} ${majiq_sj} --nthreads ${task.cpus} --overwrite && \\
     touch build_sg_${species_name}_${sra_accession}.ok
     """
 }
@@ -481,7 +481,7 @@ process MAJIQ_VOILA_MODULIZE{
     """
     mkdir -p ${outdir}/majiq/results
     
-    voila modulize ${majiq_build} ${majiq_psi}  ${majiq_sg_coverage}  -d ${sra_accession}_majiq -j ${majiq_cores} --keep-constitutive --show-all --show-read-counts --overwrite && \\
+    voila modulize ${majiq_build} ${majiq_psi}  ${majiq_sg_coverage}  -d ${sra_accession}_majiq -j ${task.cpus} --keep-constitutive --show-all --show-read-counts --overwrite && \\
     ${cleanup}
     """
 }
