@@ -185,19 +185,24 @@ workflow {
             annotation_ch,
         )
 
-        // MAJIQ SJ failure is observable even though a failed command does
-        // not produce the success-only .ok marker consumed by MAJIQ_BUILD.
-        MAJIQ_SJ.out.status.subscribe { sample, statusFile ->
-            def fields = statusFile.text.trim().split('\\t')
-            if (fields.size() != 4 || fields[0] != sample || fields[1] != 'MAJIQ_SJ') {
-                error "Malformed MAJIQ SJ status for ${sample}: ${statusFile}"
+        // Early MAJIQ failures are terminal for that branch. A successful
+        // MAJIQ_SJ is NOT terminal; its branch continues through Modulize.
+        majiq_sj_failures = MAJIQ_SJ.out.status
+            .map { sample, statusFile ->
+                def fields = statusFile.text.trim().split('\\t')
+                if (fields.size() != 4 || fields[0] != sample || fields[1] != 'MAJIQ_SJ') {
+                    error "Malformed MAJIQ SJ status for ${sample}: ${statusFile}"
+                }
+                if (fields[2] == 'FAILED') {
+                    log.warn "SAMPLE_STAGE_FAILED sample=${sample} stage=MAJIQ_SJ exit=${fields[3]}"
+                    tuple(sample, 'FAILED', 'MAJIQ_SJ')
+                } else if (fields[2] == 'SUCCESS') {
+                    null
+                } else {
+                    error "Unknown MAJIQ SJ status: ${fields[2]}"
+                }
             }
-            if (fields[2] == 'FAILED') {
-                log.warn "SAMPLE_STAGE_FAILED sample=${sample} stage=MAJIQ_SJ exit=${fields[3]}"
-            } else if (fields[2] != 'SUCCESS') {
-                error "Unknown MAJIQ SJ status: ${fields[2]}"
-            }
-        }
+            .filter { it != null }
 
         MAJIQ_BUILD (
             annotation_ch,
@@ -240,12 +245,40 @@ workflow {
             params.species_name,
             params.db)
 
-        // Pair outputs by sample ID, rather than relying on arrival order.
-        // MAJIQ and SGSeq remain independent and can run concurrently.
+        // A branch's terminal outcome is independent of whether a tool
+        // produced an importable directory. For now, MAJIQ failures at SJ
+        // and successful Modulize are handled explicitly; intermediate MAJIQ
+        // process failures still require status wrappers.
         majiq_by_sample = MAJIQ_VOILA_MODULIZE.out.majiq_results
             .map { tool, sample, results -> tuple(sample, results) }
-        // Only allow successful SGSeq outcomes into DB pairing. An ignored
-        // or missing result directory cannot be treated as a valid analysis.
+        majiq_success = majiq_by_sample.map { sample, results ->
+            tuple(sample, 'SUCCESS', 'MAJIQ_VOILA_MODULIZE')
+        }
+        majiq_terminal = majiq_sj_failures.mix(majiq_success)
+
+        // Both analysis branches must have terminal outcomes. This join
+        // intentionally contains statuses, not success-only directories.
+        branch_terminal = sgseq_outcomes.join(
+            majiq_terminal,
+            by: 0,
+            failOnDuplicate: true,
+            failOnMismatch: true
+        )
+        branch_terminal.subscribe { sample, sgseqStatus, majiqStatus, majiqStage ->
+            if (sgseqStatus == 'FAILED' || majiqStatus == 'FAILED') {
+                log.warn "SAMPLE_TERMINAL sample=${sample} status=FAILED sgseq=${sgseqStatus} majiq=${majiqStatus} stage=${majiqStage}"
+                // Release only after BOTH analysis branches have ended.
+                // No DB import is attempted for unsuccessful samples.
+                admissionSlots.release()
+            } else {
+                log.info "SAMPLE_ANALYSIS_COMPLETE sample=${sample} status=SUCCESS"
+            }
+        }
+
+        // Successful samples retain the existing DB -> FINALIZE_SAMPLE path.
+        // Dropping unmatched successful result directories avoids the old
+        // Join mismatch when SGSeq fails, but terminal accounting is handled
+        // separately by branch_terminal above.
         sgseq_by_sample = SGSEQ.out.sgseq_results
             .map { tool, sample, results -> tuple(sample, results) }
             .join(sgseq_outcomes, by: 0)
@@ -258,7 +291,7 @@ workflow {
             sgseq_by_sample,
             by: 0,
             failOnDuplicate: true,
-            failOnMismatch: true
+            failOnMismatch: false
         )
 
         POPULATE_DB (
