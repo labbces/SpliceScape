@@ -1,16 +1,18 @@
-# Admission-controller prototype (v2.6)
+# Admission diagnostic test (Nextflow DSL2)
 
-The existing production `splicescape.nf` is unchanged. The experimental
-`tests/admission_controller.nf` tests a possible nonblocking bounded
-admission mechanism. This prototype uses the deprecated dynamic
-`channel.create()` API and has **not been validated** on the SGE system.
+This test was revised after Nextflow 25.04.8 rejected the obsolete
+`channel.create()` API. The replacement uses standard DSL2 channels and
+`maxForks` to cap concurrent tasks in **one simulated process**.
 
-## Run the experiment
+**Limitation:** This is NOT a replacement for the production
+`max_active_samples` controller. It does not bound the total number of
+samples across multiple Nextflow processes and cannot handle real scheduler
+failures. The production `splicescape.nf` is unchanged and still uses the
+blocking semaphore.
 
-From `reads_processing`:
+Run from `reads_processing`:
 
 ```bash
-nextflow -version
 nextflow run tests/admission_controller.nf \
   --max_active_samples 2 \
   --test_samples sample1,sample2,sample3,sample4,sample5 \
@@ -19,21 +21,18 @@ nextflow run tests/admission_controller.nf \
   -ansi-log false
 ```
 
-Simulated failures are represented as successful task execution with
-`FAILED` status in the output (not as SGE-level task failures). The test
-should print five `ADMITTED`, five `TERMINAL`, and one
-`ALL_TERMINAL 5/5` message without exceeding two active samples.
+Check:
 
 ```bash
-grep -E 'ADMITTED|TERMINAL' .nextflow.log | tail -30
+grep -E 'TERMINAL|ALL_TERMINAL|ERROR' .nextflow.log | tail -30
+cat admission-trace.tsv
 ```
 
-Set `--fail_samples ''` for an all-success test. Set
-`--fail_samples sample1,sample2` for two early simulated failures.
+Expected: five terminal records and `ALL_TERMINAL 5/5`.
+In the trace, at most two `SIMULATED_LIFECYCLE` tasks should overlap.
+These are simulated FAILED **status values**; the underlying Nextflow
+process exits successfully.
 
-**Important:** An `InterruptedException`, a stalled run, or an error
-about `channel.create()` means the prototype is not compatible/safe.
-Do not integrate it into production. The prototype does not yet model
-actual STAR/MAJIQ/SGSeq process exit behavior, branch synchronization,
-resume semantics, or import. Such tests are prerequisites to replacing
-the production controller.
+Do **not** treat this passing as validation of the real sample lifecycle.
+A production solution still requires end-to-end status propagation, branch
+coordination, and nonblocking admission design compatible with DSL2.
