@@ -3,7 +3,6 @@
 process GET_READ_FTP {
     tag "${sra_accession}"
     errorStrategy 'ignore'
-    maxForks 3
 
     input:
     val sra_accession
