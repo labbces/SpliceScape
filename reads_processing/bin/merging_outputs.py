@@ -101,6 +101,24 @@ def create_tables(db, genome_version, species_name, ref_table=None, ref_column="
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_summary_junction ON junction_summary_stats(junctionID)')
 
 
+            # Per-sample QC metrics from BBDuk and STAR.
+            # The source log is parsed after successful biological analyses.
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS sample_qc_metrics (
+                sra_id TEXT NOT NULL,
+                genome_version TEXT NOT NULL,
+                tool TEXT NOT NULL,
+                metric TEXT NOT NULL,
+                numeric_value REAL,
+                text_value TEXT,
+                PRIMARY KEY (sra_id, genome_version, tool, metric),
+                FOREIGN KEY (genome_version) REFERENCES genome_info(genome_version)
+            )
+            """)
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_qc_sample ON sample_qc_metrics(sra_id, genome_version)"
+            )
+
             conn.commit()
             print(f"Database '{db}' successfully verified/created.")
 
