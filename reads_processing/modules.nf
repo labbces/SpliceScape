@@ -277,8 +277,9 @@ process MAPPING_STAR {
     def sortedBAM = "${fileNamePrefix}Aligned.sortedByCoord.out.bam"
 
     def cleanup = params.rm_reads_scratch_clean ? """
-    rm -rf ${clean_read_1} && \\
-    rm -rf ${clean_read_2}
+        rm -f "${clean_read_1}" "${clean_read_2}"
+    """ : "true"
+
     """
     set +e
     mkdir -p "${outdir}/mapping/inspect/${sra_accession}"
@@ -315,23 +316,6 @@ process MAPPING_STAR {
     fi
     printf '%s\\t%s\\t%s\\t%s\\n' '${sra_accession}' MAPPING_STAR "\$state" "\$code" > status_star_${sra_accession}.tsv
     exit 0
-    """
-    mkdir -p ${outdir}/mapping/inspect/${sra_accession}
-
-    STAR --runThreadN ${num_threads} \\
-        --genomeDir $genome_idx_dir \\
-        --outFileNamePrefix $fileNamePrefix \\
-        --outSAMtype BAM Unsorted \\
-        --readFilesIn ${reads_input} \\
-        --readFilesCommand zcat \\
-        --outSAMstrandField intronMotif \\
-        --twopassMode Basic
-
-    samtools sort -@ ${num_threads} -o $sortedBAM $unsortedBAM
-    samtools index $sortedBAM && \\
-    rm $unsortedBAM && \\
-    touch mapping_${sra_accession}.ok && \\
-    ${cleanup} 
     """
 }
 
