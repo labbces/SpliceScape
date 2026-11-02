@@ -589,6 +589,13 @@ process POPULATE_DB{
     touch db_majiq_${sra_accession}.ok
 
     '${pythonExe}' '${projectDir}/bin/SGSeq_parser.py' --results_dir ${path_to_results_sgseq} --db "${db}" --ref_exons ${genomeGFF_file} --genome_version ${species_code} --species "${species_name}" --sra_id ${sra_accession}
+    # Import QC only after both analysis parsers succeeded.
+    '${pythonExe}' '${projectDir}/bin/import_sample_qc.py' \\
+        --db "${db}" \\
+        --sra-id '${sra_accession}' \\
+        --genome-version '${species_code}' \\
+        --bbduk-log "${params.outdir}/reads/inspect/bbduk/${sra_accession}.bbduk.log" \\
+        --star-log "${params.outdir}/mapping/inspect/${sra_accession}/${species_code}_${sra_accession}_Log.final.out"
     touch db_sgseq_${sra_accession}.ok
     """
 }
