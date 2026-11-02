@@ -122,6 +122,32 @@ workflow {
             params.outdir
         )
 
+        // The early stages have exactly one failure terminal per sample:
+        // a failed stage emits no success marker, so later stages do not run.
+        // The status records nevertheless reach this independent channel.
+        early_failures = WGET_DOWNLOADER.out.status
+            .mix(ALTERNATIVE_RUN_BBDUK.out.status)
+            .mix(MAPPING_STAR.out.status)
+            .map { sample, statusFile ->
+                def fields = statusFile.text.trim().split('\\t')
+                if (fields.size() != 4 || fields[0] != sample) {
+                    error "Malformed early-stage status for ${sample}: ${statusFile}"
+                }
+                if (!(fields[2] in ['SUCCESS', 'FAILED'])) {
+                    error "Unknown early-stage status ${fields[2]} for ${sample}"
+                }
+                tuple(sample, fields[1], fields[2], fields[3])
+            }
+            .filter { sample, stage, status, exitCode ->
+                status == 'FAILED'
+            }
+
+        early_failures.subscribe { sample, stage, status, exitCode ->
+            log.warn "SAMPLE_STAGE_FAILED sample=${sample} stage=${stage} exit=${exitCode}"
+            log.warn "SAMPLE_TERMINAL sample=${sample} status=FAILED stage=${stage}"
+            admissionSlots.release()
+        }
+
         // Splicing analysis
         SGSEQ (
             MAPPING_STAR.out.bam_sra_tuple,
