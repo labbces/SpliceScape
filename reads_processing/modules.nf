@@ -186,8 +186,9 @@ process ALTERNATIVE_RUN_BBDUK {
     def trimmed_out = "out1=${clean_read_1} out2=${clean_read_2}"
 
     def cleanup = params.rm_reads_scratch_raw ? """
-    rm -rf ${raw_read_1}
-    rm -rf ${raw_read_2}
+        rm -f "${raw_read_1}" "${raw_read_2}"
+    """ : "true"
+
     """
     set +e
     mkdir -p "${outdir}/reads/inspect/bbduk/" "${outdir}/reads/scratch/clean/"
@@ -215,20 +216,6 @@ process ALTERNATIVE_RUN_BBDUK {
     fi
     printf '%s\\t%s\\t%s\\t%s\\n' '${sra_accession}' ALTERNATIVE_RUN_BBDUK "\$state" "\$code" > status_bbduk_${sra_accession}.tsv
     exit 0
-    """
-    mkdir -p ${outdir}/reads/inspect/bbduk/
-    mkdir -p ${outdir}/reads/scratch/clean/
-
-    ${bbduk_executable} \\
-        -Xmx${max_mem} \\
-        $raw \\
-        $trimmed_out \\
-        threads=$task.cpus \\
-        $contaminants_fa \\
-        $args \\
-        2> "${bbduk_log}" && \\
-    touch bbduk_${sra_accession}.ok && \\
-    ${cleanup}
     """
 }
 
