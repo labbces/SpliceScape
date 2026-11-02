@@ -21,8 +21,6 @@ include { MAJIQ_VOILA_MODULIZE       } from './modules.nf'
 include { CREATE_DB                  } from './modules.nf'
 include { POPULATE_DB                } from './modules.nf'
 include { FINALIZE_SAMPLE             } from './modules.nf'
-// include { MAJIQ_SETTING_V2          } from './modules.nf'
-// include { MAJIQ_RUN_V2              } from './modules.nf' 
 
 
 workflow {
@@ -44,9 +42,7 @@ workflow {
         Adapter Ref      : ${params.rref}
         SGSeq Cores      : ${params.sgseq_cores}
         R Libs           : ${params.r_libs}
-        MAJIQ Path       : ${params.majiq_path}
         Max Memory       : ${params.maxmem}
-        Genome Path (Ann): ${params.genome_path} // Used by majiq_setting
         ---
         Other params from config:
         Work directory: ${workDir}
@@ -151,24 +147,6 @@ workflow {
             }
             tuple(sample, fields[2])
         }
-
-        //MAJIQ_SETTING_V2 (
-        //    SGSEQ.out.bam_passthrough, 
-        //    params.species,
-        //    params.genome_path, 
-        //    SGSEQ.out.status,   
-        //    params.majiq_path,
-        //    params.genomeGFF,
-        //    params.outdir 
-        //)
-
-        //MAJIQ_RUN_V2 (
-        //    params.species,
-        //    params.majiq_path,
-        //    MAJIQ_SETTING_V2.out.majiq_input_tuple,
-        //    params.outdir, 
-        //    params.majiq_cores
-        //)        
 
         MAJIQ_ANNOTATION_DB (
             params.genomeGFF,
