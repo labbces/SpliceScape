@@ -107,7 +107,7 @@ process RUN_BBDUK {
 
 process WGET_DOWNLOADER {
     tag "${sra_accession}"
-    errorStrategy 'ignore'
+    errorStrategy 'terminate'
     maxRetries 2
 
     input:
@@ -118,7 +118,8 @@ process WGET_DOWNLOADER {
     val outdir 
 
     output:
-    tuple val(sra_accession), path("raw_read_${sra_accession}.ok"), emit: reads_sra
+    tuple val(sra_accession), path("raw_read_${sra_accession}.ok"), optional: true, emit: reads_sra
+    tuple val(sra_accession), path("status_wget_${sra_accession}.tsv"), emit: status
 
     script:
     def user_arg = "--user='${user}'"
@@ -128,35 +129,36 @@ process WGET_DOWNLOADER {
     def raw_read_2 = "${outdir}/reads/scratch/raw/${sra_accession}_2.fastq.gz"
 
     """
-    mkdir -p ${outdir}/reads/scratch/raw/
-
+    set +e
+    mkdir -p "${outdir}/reads/scratch/raw/"
     wget -r -np ${accept_pattern} ${user_arg} ${pass_arg} "${url}"
-
-    # Check if wget command was successful
-    if [ \$? -ne 0 ]; then
-        echo "ERR: wget has failed for SRR ${sra_accession}." >&2
-        exit 1
+    code=\$?
+    if [ "\$code" -eq 0 ]; then
+        read1=\$(find . -name "*${sra_accession}*_1.fastq.gz" -type f)
+        read2=\$(find . -name "*${sra_accession}*_2.fastq.gz" -type f)
+        if [ \$(printf '%s\\n' "\$read1" | grep -c .) -eq 1 ] && [ \$(printf '%s\\n' "\$read2" | grep -c .) -eq 1 ] && [ -s "\$read1" ] && [ -s "\$read2" ]; then
+            mv "\$read1" "${raw_read_1}" && mv "\$read2" "${raw_read_2}"
+            code=\$?
+        else
+            echo 'ERR: FASTQ pair missing, ambiguous or empty for ${sra_accession}' >&2
+            code=1
+        fi
     fi
-
-    read1=\$(find . -name "*${sra_accession}*_1.fastq.gz" -type f)
-    read2=\$(find . -name "*${sra_accession}*_2.fastq.gz" -type f)
-
-    if [ \$(echo "\$read1" | wc -w) -eq 1 ] && [ \$(echo "\$read2" | wc -w) -eq 1 ] && [ -s "\$read1" ] && [ -s "\$read2" ]; then
-        echo "SUCESS: Files for ${sra_accession} downloaded and verified."
-        
-        mv "\$read1" ${raw_read_1}
-        mv "\$read2" ${raw_read_2}
+    if [ "\$code" -eq 0 ] && [ -s "${raw_read_1}" ] && [ -s "${raw_read_2}" ]; then
+        state=SUCCESS
+        touch raw_read_${sra_accession}.ok
     else
-        echo "ERR: Fastq files for ${sra_accession} not found or empty." >&2
-        exit 1
-    fi && \\
-    touch raw_read_${sra_accession}.ok
+        state=FAILED
+        if [ "\$code" -eq 0 ]; then code=1; fi
+    fi
+    printf '%s\\t%s\\t%s\\t%s\\n' '${sra_accession}' WGET_DOWNLOADER "\$state" "\$code" > status_wget_${sra_accession}.tsv
+    exit 0
     """
 }
 
 process ALTERNATIVE_RUN_BBDUK {
     tag "${sra_accession}"
-    errorStrategy 'retry'
+    errorStrategy 'terminate'
 
     input:
     tuple val(sra_accession), path(raw_read)
@@ -169,7 +171,8 @@ process ALTERNATIVE_RUN_BBDUK {
     val outdir    
 
     output:
-    tuple val(sra_accession), path("bbduk_${sra_accession}.ok"), emit: trimmed_reads_sra
+    tuple val(sra_accession), path("bbduk_${sra_accession}.ok"), optional: true, emit: trimmed_reads_sra
+    tuple val(sra_accession), path("status_bbduk_${sra_accession}.tsv"), emit: status
 
     script:
     def raw_read_1 = "${outdir}/reads/scratch/raw/${sra_accession}_1.fastq.gz"
@@ -185,8 +188,33 @@ process ALTERNATIVE_RUN_BBDUK {
     def cleanup = params.rm_reads_scratch_raw ? """
     rm -rf ${raw_read_1}
     rm -rf ${raw_read_2}
-    """ : "true"
-    
+    """
+    set +e
+    mkdir -p "${outdir}/reads/inspect/bbduk/" "${outdir}/reads/scratch/clean/"
+    if [ ! -s "${raw_read_1}" ] || [ ! -s "${raw_read_2}" ]; then
+        echo 'ERR: Missing raw reads for ${sra_accession}' >&2
+        code=1
+    else
+        ${bbduk_executable} \\
+            -Xmx${max_mem} \\
+            ${raw} \\
+            ${trimmed_out} \\
+            threads=${task.cpus} \\
+            ${contaminants_fa} \\
+            ${args} \\
+            2> "${bbduk_log}"
+        code=\$?
+    fi
+    if [ "\$code" -eq 0 ] && [ -s "${clean_read_1}" ] && [ -s "${clean_read_2}" ]; then
+        touch bbduk_${sra_accession}.ok
+        state=SUCCESS
+        ${cleanup}
+    else
+        state=FAILED
+        if [ "\$code" -eq 0 ]; then code=1; fi
+    fi
+    printf '%s\\t%s\\t%s\\t%s\\n' '${sra_accession}' ALTERNATIVE_RUN_BBDUK "\$state" "\$code" > status_bbduk_${sra_accession}.tsv
+    exit 0
     """
     mkdir -p ${outdir}/reads/inspect/bbduk/
     mkdir -p ${outdir}/reads/scratch/clean/
@@ -240,7 +268,7 @@ process GENOME_GENERATE_STAR {
 
 process MAPPING_STAR {
     tag "${sra_accession} on ${species_name}"
-    errorStrategy 'ignore'
+    errorStrategy 'terminate'
 
     input:
     tuple val(sra_accession), path(trimmed_bbduk_reads)
@@ -250,7 +278,8 @@ process MAPPING_STAR {
     val outdir 
 
     output:
-    tuple val("${sra_accession}"), path("mapping_${sra_accession}.ok"), emit: bam_sra_tuple
+    tuple val("${sra_accession}"), path("mapping_${sra_accession}.ok"), optional: true, emit: bam_sra_tuple
+    tuple val(sra_accession), path("status_star_${sra_accession}.tsv"), emit: status
 
     script:
     def fileNamePrefix = "${outdir}/mapping/inspect/${sra_accession}/${species_name}_${sra_accession}_"
@@ -263,8 +292,42 @@ process MAPPING_STAR {
     def cleanup = params.rm_reads_scratch_clean ? """
     rm -rf ${clean_read_1} && \\
     rm -rf ${clean_read_2}
-    """ : "true"
-
+    """
+    set +e
+    mkdir -p "${outdir}/mapping/inspect/${sra_accession}"
+    if [ ! -s "${clean_read_1}" ] || [ ! -s "${clean_read_2}" ]; then
+        echo 'ERR: Missing trimmed FASTQ pair for ${sra_accession}' >&2
+        code=1
+    else
+        STAR --runThreadN ${num_threads} \\
+            --genomeDir "${genome_idx_dir}" \\
+            --outFileNamePrefix "${fileNamePrefix}" \\
+            --outSAMtype BAM Unsorted \\
+            --readFilesIn ${reads_input} \\
+            --readFilesCommand zcat \\
+            --outSAMstrandField intronMotif \\
+            --twopassMode Basic
+        code=\$?
+        if [ "\$code" -eq 0 ]; then
+            samtools sort -@ ${num_threads} -o "${sortedBAM}" "${unsortedBAM}"
+            code=\$?
+        fi
+        if [ "\$code" -eq 0 ]; then
+            samtools index "${sortedBAM}"
+            code=\$?
+        fi
+    fi
+    if [ "\$code" -eq 0 ] && [ -s "${sortedBAM}" ] && [ -s "${sortedBAM}.bai" ]; then
+        touch mapping_${sra_accession}.ok
+        state=SUCCESS
+        rm -f "${unsortedBAM}"
+        ${cleanup}
+    else
+        state=FAILED
+        if [ "\$code" -eq 0 ]; then code=1; fi
+    fi
+    printf '%s\\t%s\\t%s\\t%s\\n' '${sra_accession}' MAPPING_STAR "\$state" "\$code" > status_star_${sra_accession}.tsv
+    exit 0
     """
     mkdir -p ${outdir}/mapping/inspect/${sra_accession}
 
