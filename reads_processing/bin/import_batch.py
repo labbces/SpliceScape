@@ -79,6 +79,7 @@ def main():
         verify_db(local_db)
 
         for sample, majiq_dir, sgseq_dir in rows:
+            current_stage = "MAJIQ"
             start = time.perf_counter()
             checkpoint = Path(folder) / "checkpoint.sqlite"
             # Existing parsers use separate connections and COMMIT internally.
@@ -91,6 +92,7 @@ def main():
                     ("MAJIQ", "majiq_Parser.py", majiq_dir),
                     ("SGSEQ", "SGSeq_parser.py", sgseq_dir),
                 ):
+                    current_stage = tool
                     env["SPLICESCAPE_IMPORT_PROFILE"] = "1"
                     env["SPLICESCAPE_IMPORT_PROFILE_FILE"] = (
                         f"import_profile_{sample}_{tool.lower()}.jsonl"
@@ -102,6 +104,7 @@ def main():
                          "--genome_version", a.genome_version,
                          "--species", a.species,
                          "--sra_id", sample], tool, sample, env)
+                current_stage = "QC"
                 run([sys.executable, str(HERE / "import_sample_qc.py"),
                      "--db", str(local_db),
                      "--sra-id", sample, "--genome-version", a.genome_version,
@@ -114,7 +117,7 @@ def main():
                 # Revert all commits made by this sample's subprocesses.
                 os.replace(checkpoint, local_db)
                 msg = str(exc).replace("\t", " ").replace("\n", " ")
-                results.append((sample, "FAILED", "POPULATE_DB", msg))
+                results.append((sample, "FAILED", current_stage, msg))
                 print(f"BATCH_IMPORT_FAILED sample={sample} reason={msg}", file=sys.stderr, flush=True)
             else:
                 checkpoint.unlink()
