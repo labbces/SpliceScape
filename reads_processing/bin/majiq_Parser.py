@@ -718,6 +718,11 @@ def bulk_update(db_conn, sra_id):
     """
     try:
         # We pass the tuple (sra_id,) to parameterize the inner search
+        if os.environ.get("SPLICESCAPE_IMPORT_PROFILE") == "1":
+            import import_profiler
+            import_profiler.explain_once(
+                db_conn, "bulk_update", sql_bulk_update, (sra_id,)
+            )
         cursor.execute(sql_bulk_update, (sra_id,))
         affected_rows = cursor.rowcount
         db_conn.commit()
@@ -768,6 +773,11 @@ def update_nalt_obsolescence(db_conn, seen_genes):
                         AND alt.event_type != 'NALT'
                   );
             """
+            if os.environ.get("SPLICESCAPE_IMPORT_PROFILE") == "1":
+                import import_profiler
+                import_profiler.explain_once(
+                    db_conn, "nalt_obsolescence", sql_update_nalt, current_batch
+                )
             cursor.execute(sql_update_nalt, current_batch)
             total_affected_rows += cursor.rowcount
             
