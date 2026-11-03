@@ -643,3 +643,71 @@ process FINALIZE_SAMPLE {
     touch finished_${sra_accession}.ok
     """
 }
+
+
+/* Batch-level SQLite writer. All paired analysis results are collected first. */
+process POPULATE_DB_BATCH {
+    tag "batch"
+    errorStrategy 'terminate'
+    maxForks 1
+    publishDir "${new File(params.db.toString()).absoluteFile.parent}", mode: 'copy',
+               pattern: "${new File(params.db.toString()).name}", overwrite: false
+    publishDir "${params.outdir}/db", mode: 'copy', pattern: "batch_import_status.tsv"
+    publishDir "${params.outdir}/db", mode: 'copy', pattern: "import_profile_*.jsonl"
+
+    input:
+    val batch_records
+    path genomeGFF_file
+    val species_code
+    val species_name
+
+    output:
+    tuple path("${new File(params.db.toString()).name}"),
+          path("batch_import_status.tsv"),
+          path("batch_db.ok"), emit: batch_result
+
+    script:
+    def condaEnv = params.environment?.conda_env
+    if (!condaEnv) error "POPULATE_DB_BATCH requires environment.conda_env in JSON"
+    def pythonExe = new File(condaEnv.toString(), 'bin/python').absolutePath
+    def dbFileName = new File(params.db.toString()).name
+    // Persist absolute Nextflow work paths; keep work dirs until batch import.
+    def rows = batch_records.collect { rec ->
+        def sample = rec[0].toString()
+        if (!(sample ==~ /[A-Za-z0-9_.-]+/))
+            error "Unsafe sample accession in import manifest: ${sample}"
+        [sample, rec[1].toAbsolutePath(), rec[2].toAbsolutePath()].join('\t')
+    }.join('\n')
+    """
+    set -euo pipefail
+    test -x '${pythonExe}' || { echo 'Conda Python not found: ${pythonExe}' >&2; exit 1; }
+    cat > batch_manifest.tsv <<'SPLICESCAPE_MANIFEST_END'
+${rows}
+SPLICESCAPE_MANIFEST_END
+    dbscratch="${params.local_db_scratch ?: ''}"
+    if [ -z "\$dbscratch" ]; then dbscratch="\${TMPDIR:-}"; fi
+    if [ -z "\$dbscratch" ]; then
+        echo 'Set local_db_scratch in JSON or configure node-local TMPDIR' >&2
+        exit 2
+    fi
+    test -d "\$dbscratch" && test -w "\$dbscratch" || {
+        echo "Scratch directory is not writable: \$dbscratch" >&2; exit 2;
+    }
+    fstype=\$(stat -f -c %T "\$dbscratch")
+    case "\$fstype" in
+        nfs|nfs4|cifs|smb2|lustre|gpfs)
+            echo "Refusing SQLite on shared filesystem: \$dbscratch (\$fstype)" >&2
+            exit 2 ;;
+    esac
+    '${pythonExe}' '${projectDir}/bin/import_batch.py' \\
+      --manifest batch_manifest.tsv \\
+      --ref-exons '${genomeGFF_file}' \\
+      --genome-version '${species_code}' \\
+      --species '${species_name}' \\
+      --outdir '${params.outdir}' \\
+      --scratch-dir "\$dbscratch" \\
+      --destination '${dbFileName}' \\
+      --status batch_import_status.tsv
+    touch batch_db.ok
+    """
+}
