@@ -61,6 +61,8 @@ def main():
     rows = []
     with open(a.manifest, newline="", encoding="utf-8") as handle:
         for row in csv.reader(handle, delimiter="\t"):
+            if not row:  # an all-failed batch has an empty manifest
+                continue
             if len(row) != 3 or not row[0]:
                 raise ValueError(f"Invalid manifest entry: {row!r}")
             rows.append(row)
