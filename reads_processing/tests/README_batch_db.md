@@ -205,6 +205,42 @@ filesystem**, same input TSVs, and a fresh database. These are end-to-end
 tests; the synthetic equivalence tests do not constitute a real-data speedup
 measurement.
 
+## Phase 2b: alternative_parser exon-coordinate query optimization
+
+The MAJIQ and SGSeq `alternative_parser` functions still use the
+**same bedtools closest commands**, with the same strand and tie-breaking
+settings. The change is confined to `calculate_neighboring_exon_coordinates`:
+
+1. Cache each parser process's reference exon BedTool instead of reopening
+   or re-sorting it on every event type.
+2. Query identical (chromosome, start, end, strand) intervals only once per
+   call and broadcast coordinates to every original observation.
+3. Fall back to the legacy implementation for missing coordinate keys,
+   pre-existing coordinate columns, no duplicate intervals or unexpected
+   cardinality from bedtools.
+
+Run the unit test:
+
+```bash
+python3 reads_processing/tests/test_neighbor_exon_query.py
+```
+
+For real-data validation, run `import_batch.py` again against the *same*
+MAJIQ/SGSeq output directories, with a fresh database filename and cleaned
+profiling JSONL files. Compare the result against the validated v2.1
+reference using `compare_sample_databases.py`. Require
+`RESULT: MATCH (0 discrepancies)` before accepting this optimization.
+
+The profiler emits `exon_query_deduplication` records with
+`input_rows`, `unique_queries`, `reused_queries` and `elapsed_s`.
+These values measure how many repeated genomic intervals were avoided; they
+do not directly measure total runtime savings. Check the total
+`alternative_parser` and `calculate_neighboring_exon_coordinates`
+timings in both parsers.
+
+Note that the cached reference is only reused *within one Python parser
+process*. This does not persist across independent SGE jobs.
+
 ## Known v2.2 limitations
 
 - The existing blocking semaphore is still used for admission. That
