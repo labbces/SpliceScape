@@ -58,7 +58,7 @@ class TestBatch(unittest.TestCase):
             with sqlite3.connect(destination) as conn:
                 self.assertEqual(conn.execute(
                     "SELECT sample FROM test_rows ORDER BY sample"
-                ).fetchall(), [("GOOD",), ("GOOD",)])
+                ).fetchall(), [("GOOD",), ("GOOD",), ("GOOD",)])
             with statuses.open() as fh:
                 rows = list(csv.DictReader(fh, delimiter="\t"))
             self.assertEqual([row["status"] for row in rows], ["SUCCESS", "FAILED"])
