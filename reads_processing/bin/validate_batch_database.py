@@ -120,9 +120,9 @@ def validate(database, status_file, genome_version, atol=1e-9, rtol=1e-9):
             changed = []
             for name in METRICS:
                 expected_value = expected[name]
-                if name.endswith("_majiq") and expected["n_of_samples_majiq"] == 0:
+                if expected_value is None and name.endswith("_majiq") and expected["n_of_samples_majiq"] == 0:
                     expected_value = 0
-                if name.endswith("_sgseq") and expected["n_of_samples_sgseq"] == 0:
+                if expected_value is None and name.endswith("_sgseq") and expected["n_of_samples_sgseq"] == 0:
                     expected_value = 0
                 if not equivalent(expected_value, actual[name], atol, rtol):
                     changed.append(name)
