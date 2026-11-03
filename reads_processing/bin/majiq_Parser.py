@@ -913,6 +913,7 @@ def main():
     except sqlite3.Error as e:
         print(f"Database Error: {e}")
         traceback.print_exc()
+        sys.exit(1)
     except Exception as e:
         print(f"Unexpected Error: {e}")
         sys.exit(1)
