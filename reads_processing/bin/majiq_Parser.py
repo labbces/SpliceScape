@@ -837,6 +837,30 @@ def main():
 
     args = parser.parse_args()
 
+    # Optional v2.2 profiling; leave data and SQL semantics unchanged.
+    profiler = None
+    if os.environ.get("SPLICESCAPE_IMPORT_PROFILE") == "1":
+        import import_profiler as profiler
+        profiler.configure(
+            os.environ.get("SPLICESCAPE_IMPORT_PROFILE_FILE", "import_profile.jsonl"),
+            args.sra_id, "MAJIQ"
+        )
+        profiler.profile_functions(globals(), [
+            "load_majiq_file",
+            "formatting_input_data",
+            "filter_events_by_db_status",
+            "calculate_neighboring_exon_coordinates",
+            "prepare_df_for_majiq_insertion",
+            "insert_new_events_into_db",
+            "alternative_parser",
+            "update_or_insert_junction_sample_stats_majiq",
+            "bulk_update",
+            "update_nalt_obsolescence",
+            "_deduplicate_majiq_junctions",
+            "_query_in_batches",
+        ])
+
+
     # Check input files existence
     for f in [args.results_dir, args.ref_exons]:
         if not os.path.exists(f):
@@ -848,6 +872,8 @@ def main():
     conn = None
     try:
         conn = sqlite3.connect(args.db)
+        if profiler:
+            profiler.database_snapshot(conn, args.db, "database_before")
 
     # Check if majiq results from the same sample is already in the SQL database
         if not args.force:
@@ -882,6 +908,13 @@ def main():
         sys.exit(1)
         traceback.print_exc()
     finally:
+        if conn and profiler:
+            try:
+                profiler.database_snapshot(conn, args.db, "database_after")
+            except Exception:
+                logging.exception("Failed to capture final SQLite profile snapshot")
+        if profiler:
+            profiler.finish()
         if conn:
             conn.close()
             print("Database connection closed.")
