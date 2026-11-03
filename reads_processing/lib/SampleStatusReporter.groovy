@@ -70,6 +70,14 @@ class SampleStatusReporter {
         persist()
     }
 
+    synchronized void analysisComplete(String sample) {
+        def row = requireSample(sample)
+        if (row.status == 'RUNNING') {
+            row.status = 'ANALYSIS_COMPLETE'
+            persist()
+        }
+    }
+
     synchronized void failed(String sample) {
         def row = requireSample(sample)
         if (row.status in ['FAILED', 'SUCCESS']) return
@@ -95,7 +103,7 @@ class SampleStatusReporter {
             if (row.status == 'PENDING') {
                 row.status = 'INCOMPLETE'
                 row.reason = 'NOT_ADMITTED_BEFORE_WORKFLOW_END'
-            } else if (row.status == 'RUNNING') {
+            } else if (row.status in ['RUNNING', 'ANALYSIS_COMPLETE']) {
                 row.status = 'INCOMPLETE'
                 row.reason = row.reason ?
                     "${row.reason};NO_TERMINAL_EVENT" : 'NO_TERMINAL_EVENT'
