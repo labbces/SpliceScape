@@ -20,8 +20,7 @@ include { MAJIQ_SG_COVERAGE          } from './modules.nf'
 include { MAJIQ_VOILA_MODULIZE       } from './modules.nf'
 include { CREATE_DB                  } from './modules.nf'
 include { POPULATE_DB                } from './modules.nf'
-// include { MAJIQ_SETTING_V2          } from './modules.nf'
-// include { MAJIQ_RUN_V2              } from './modules.nf' 
+include { FINALIZE_SAMPLE             } from './modules.nf'
 
 
 workflow {
@@ -43,9 +42,7 @@ workflow {
         Adapter Ref      : ${params.rref}
         SGSeq Cores      : ${params.sgseq_cores}
         R Libs           : ${params.r_libs}
-        MAJIQ Path       : ${params.majiq_path}
         Max Memory       : ${params.maxmem}
-        Genome Path (Ann): ${params.genome_path} // Used by majiq_setting
         ---
         Other params from config:
         Work directory: ${workDir}
@@ -60,12 +57,24 @@ workflow {
             params.threads, 
             params.species)
         
-        genome_index_ch = GENOME_GENERATE_STAR.out.genome_index_dir
+        genome_index_ch = GENOME_GENERATE_STAR.out.genome_index_dir.first()
         
         // Channel with read IDs
+        // A permit is acquired before admitting a sample to download.
+        // The permit is released only after its complete lifecycle.
+        // Admission happens on the Nextflow runtime, not in an SGE job.
+        def maximum = (params.max_active_samples ?: 2) as int
+        if (maximum < 1) error 'max_active_samples must be >= 1'
+        def admissionSlots = new java.util.concurrent.Semaphore(maximum, true)
+
         sra_id = channel.fromPath(params.reads_file).splitText()
-                                                        .map { line -> line.trim() }
-                                                        .filter { line -> !line.isEmpty() }
+            .map { line -> line.trim() }
+            .filter { line -> !line.isEmpty() }
+            .map { sample ->
+                admissionSlots.acquire()
+                log.info "Admitted sample: ${sample}"
+                sample
+            }
 
         // Downloading reads from FTP
         // GET_READ_FTP ( sra_id, params.outdir )
@@ -113,6 +122,32 @@ workflow {
             params.outdir
         )
 
+        // The early stages have exactly one failure terminal per sample:
+        // a failed stage emits no success marker, so later stages do not run.
+        // The status records nevertheless reach this independent channel.
+        early_failures = WGET_DOWNLOADER.out.status
+            .mix(ALTERNATIVE_RUN_BBDUK.out.status)
+            .mix(MAPPING_STAR.out.status)
+            .map { sample, statusFile ->
+                def fields = statusFile.text.trim().split('\\t')
+                if (fields.size() != 4 || fields[0] != sample) {
+                    error "Malformed early-stage status for ${sample}: ${statusFile}"
+                }
+                if (!(fields[2] in ['SUCCESS', 'FAILED'])) {
+                    error "Unknown early-stage status ${fields[2]} for ${sample}"
+                }
+                tuple(sample, fields[1], fields[2], fields[3])
+            }
+            .filter { sample, stage, status, exitCode ->
+                status == 'FAILED'
+            }
+
+        early_failures.subscribe { sample, stage, status, exitCode ->
+            log.warn "SAMPLE_STAGE_FAILED sample=${sample} stage=${stage} exit=${exitCode}"
+            log.warn "SAMPLE_TERMINAL sample=${sample} status=FAILED stage=${stage}"
+            admissionSlots.release()
+        }
+
         // Splicing analysis
         SGSEQ (
             MAPPING_STAR.out.bam_sra_tuple,
@@ -123,23 +158,21 @@ workflow {
             params.outdir 
         )
 
-        //MAJIQ_SETTING_V2 (
-        //    SGSEQ.out.bam_passthrough, 
-        //    params.species,
-        //    params.genome_path, 
-        //    SGSEQ.out.status,   
-        //    params.majiq_path,
-        //    params.genomeGFF,
-        //    params.outdir 
-        //)
-
-        //MAJIQ_RUN_V2 (
-        //    params.species,
-        //    params.majiq_path,
-        //    MAJIQ_SETTING_V2.out.majiq_input_tuple,
-        //    params.outdir, 
-        //    params.majiq_cores
-        //)        
+        // Record biological-tool failures even when the process exits zero
+        // after writing its explicit status file. No admission permits are
+        // released here: that requires a terminal outcome for the whole sample.
+        sgseq_outcomes = SGSEQ.out.status.map { sample, statusFile ->
+            def fields = statusFile.text.trim().split('\\t')
+            if (fields.size() != 4 || fields[0] != sample || fields[1] != 'SGSEQ') {
+                error "Malformed SGSeq status for ${sample}: ${statusFile}"
+            }
+            if (fields[2] == 'FAILED') {
+                log.warn "SAMPLE_STAGE_FAILED sample=${sample} stage=SGSEQ exit=${fields[3]}"
+            } else if (fields[2] != 'SUCCESS') {
+                error "Unknown SGSeq status: ${fields[2]}"
+            }
+            tuple(sample, fields[2])
+        }
 
         MAJIQ_ANNOTATION_DB (
             params.genomeGFF,
@@ -147,15 +180,36 @@ workflow {
             params.outdir 
         )
     
+        annotation_ch = MAJIQ_ANNOTATION_DB.out.annotation_db.first()
+
         MAJIQ_SJ (
             MAPPING_STAR.out.bam_sra_tuple, 
             params.species,
             params.outdir,
-            MAJIQ_ANNOTATION_DB.out.annotation_db,
+            annotation_ch,
         )
 
+        // Early MAJIQ failures are terminal for that branch. A successful
+        // MAJIQ_SJ is NOT terminal; its branch continues through Modulize.
+        majiq_sj_failures = MAJIQ_SJ.out.status
+            .map { sample, statusFile ->
+                def fields = statusFile.text.trim().split('\\t')
+                if (fields.size() != 4 || fields[0] != sample || fields[1] != 'MAJIQ_SJ') {
+                    error "Malformed MAJIQ SJ status for ${sample}: ${statusFile}"
+                }
+                if (fields[2] == 'FAILED') {
+                    log.warn "SAMPLE_STAGE_FAILED sample=${sample} stage=MAJIQ_SJ exit=${fields[3]}"
+                    tuple(sample, 'FAILED', 'MAJIQ_SJ')
+                } else if (fields[2] == 'SUCCESS') {
+                    null
+                } else {
+                    error "Unknown MAJIQ SJ status: ${fields[2]}"
+                }
+            }
+            .filter { it != null }
+
         MAJIQ_BUILD (
-            MAJIQ_ANNOTATION_DB.out.annotation_db,
+            annotation_ch,
             MAJIQ_SJ.out.sj_file,
             params.outdir, 
             params.species
@@ -195,13 +249,73 @@ workflow {
             params.species_name,
             params.db)
 
+        // A branch's terminal outcome is independent of whether a tool
+        // produced an importable directory. For now, MAJIQ failures at SJ
+        // and successful Modulize are handled explicitly; intermediate MAJIQ
+        // process failures still require status wrappers.
+        majiq_by_sample = MAJIQ_VOILA_MODULIZE.out.majiq_results
+            .map { tool, sample, results -> tuple(sample, results) }
+        majiq_success = majiq_by_sample.map { sample, results ->
+            tuple(sample, 'SUCCESS', 'MAJIQ_VOILA_MODULIZE')
+        }
+        majiq_terminal = majiq_sj_failures.mix(majiq_success)
+
+        // Both analysis branches must have terminal outcomes. This join
+        // intentionally contains statuses, not success-only directories.
+        branch_terminal = sgseq_outcomes.join(
+            majiq_terminal,
+            by: 0,
+            failOnDuplicate: true,
+            failOnMismatch: true
+        )
+        branch_terminal.subscribe { sample, sgseqStatus, majiqStatus, majiqStage ->
+            if (sgseqStatus == 'FAILED' || majiqStatus == 'FAILED') {
+                log.warn "SAMPLE_TERMINAL sample=${sample} status=FAILED sgseq=${sgseqStatus} majiq=${majiqStatus} stage=${majiqStage}"
+                // Release only after BOTH analysis branches have ended.
+                // No DB import is attempted for unsuccessful samples.
+                admissionSlots.release()
+            } else {
+                log.info "SAMPLE_ANALYSIS_COMPLETE sample=${sample} status=SUCCESS"
+            }
+        }
+
+        // Successful samples retain the existing DB -> FINALIZE_SAMPLE path.
+        // Dropping unmatched successful result directories avoids the old
+        // Join mismatch when SGSeq fails, but terminal accounting is handled
+        // separately by branch_terminal above.
+        sgseq_by_sample = SGSEQ.out.sgseq_results
+            .map { tool, sample, results -> tuple(sample, results) }
+            .join(sgseq_outcomes, by: 0)
+            .filter { sample, results, status ->
+                status == 'SUCCESS' && results != null
+            }
+            .map { sample, results, status -> tuple(sample, results) }
+
+        paired_results = majiq_by_sample.join(
+            sgseq_by_sample,
+            by: 0,
+            failOnDuplicate: true,
+            failOnMismatch: false
+        )
+
         POPULATE_DB (
-            MAJIQ_VOILA_MODULIZE.out.majiq_results,
-            SGSEQ.out.sgseq_results, 
-            CREATE_DB.out.db_out, 
-            params.genomeGFF, 
+            paired_results,
+            CREATE_DB.out.db_out.first(),
+            params.genomeGFF,
             params.species,
             params.species_name
         )
+
+        // A slot is returned only after both branches, database import and
+        // optional BAM cleanup are complete. All sample IDs stay paired.
+        FINALIZE_SAMPLE(
+            POPULATE_DB.out.populate_ok,
+            params.outdir,
+            params.species
+        )
+        FINALIZE_SAMPLE.out.completed.subscribe { sample, marker ->
+            log.info "Completed sample: ${sample}; admitting next sample"
+            admissionSlots.release()
+        }
 
 }

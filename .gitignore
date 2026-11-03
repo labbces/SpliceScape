@@ -1,4 +1,12 @@
 *nextflow*
+__pycache__/
+# Nextflow reports
+reads_processing/report.html
+reads_processing/timeline.html
+reads_processing/trace.txt
+reads_processing/work/
+reads_processing/.nextflow/
+reads_processing/.nextflow.log*
 grasses/filtered
 *db
 merging_outputs/data

@@ -42,6 +42,9 @@ dependencies:
   - beautifulsoup4
   - bioconda::star
   - bioconda::nextflow=25.04.8
+  - bioconda::bedtools
+  - bioconda::pybedtools
+  - bioconda::pysam
   - r-optparse
   - bioconda::bioconductor-txdbmaker
   - numpy==2.2.6

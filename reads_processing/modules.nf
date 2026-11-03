@@ -3,7 +3,6 @@
 process GET_READ_FTP {
     tag "${sra_accession}"
     errorStrategy 'ignore'
-    maxForks 3
 
     input:
     val sra_accession
@@ -108,7 +107,7 @@ process RUN_BBDUK {
 
 process WGET_DOWNLOADER {
     tag "${sra_accession}"
-    errorStrategy 'ignore'
+    errorStrategy 'terminate'
     maxRetries 2
 
     input:
@@ -119,7 +118,8 @@ process WGET_DOWNLOADER {
     val outdir 
 
     output:
-    tuple val(sra_accession), path("raw_read_${sra_accession}.ok"), emit: reads_sra
+    tuple val(sra_accession), path("raw_read_${sra_accession}.ok"), optional: true, emit: reads_sra
+    tuple val(sra_accession), path("status_wget_${sra_accession}.tsv"), emit: status
 
     script:
     def user_arg = "--user='${user}'"
@@ -129,35 +129,36 @@ process WGET_DOWNLOADER {
     def raw_read_2 = "${outdir}/reads/scratch/raw/${sra_accession}_2.fastq.gz"
 
     """
-    mkdir -p ${outdir}/reads/scratch/raw/
-
+    set +e
+    mkdir -p "${outdir}/reads/scratch/raw/"
     wget -r -np ${accept_pattern} ${user_arg} ${pass_arg} "${url}"
-
-    # Check if wget command was successful
-    if [ \$? -ne 0 ]; then
-        echo "ERR: wget has failed for SRR ${sra_accession}." >&2
-        exit 1
+    code=\$?
+    if [ "\$code" -eq 0 ]; then
+        read1=\$(find . -name "*${sra_accession}*_1.fastq.gz" -type f)
+        read2=\$(find . -name "*${sra_accession}*_2.fastq.gz" -type f)
+        if [ \$(printf '%s\\n' "\$read1" | grep -c .) -eq 1 ] && [ \$(printf '%s\\n' "\$read2" | grep -c .) -eq 1 ] && [ -s "\$read1" ] && [ -s "\$read2" ]; then
+            mv "\$read1" "${raw_read_1}" && mv "\$read2" "${raw_read_2}"
+            code=\$?
+        else
+            echo 'ERR: FASTQ pair missing, ambiguous or empty for ${sra_accession}' >&2
+            code=1
+        fi
     fi
-
-    read1=\$(find . -name "*${sra_accession}*_1.fastq.gz" -type f)
-    read2=\$(find . -name "*${sra_accession}*_2.fastq.gz" -type f)
-
-    if [ \$(echo "\$read1" | wc -w) -eq 1 ] && [ \$(echo "\$read2" | wc -w) -eq 1 ] && [ -s "\$read1" ] && [ -s "\$read2" ]; then
-        echo "SUCESS: Files for ${sra_accession} downloaded and verified."
-        
-        mv "\$read1" ${raw_read_1}
-        mv "\$read2" ${raw_read_2}
+    if [ "\$code" -eq 0 ] && [ -s "${raw_read_1}" ] && [ -s "${raw_read_2}" ]; then
+        state=SUCCESS
+        touch raw_read_${sra_accession}.ok
     else
-        echo "ERR: Fastq files for ${sra_accession} not found or empty." >&2
-        exit 1
-    fi && \\
-    touch raw_read_${sra_accession}.ok
+        state=FAILED
+        if [ "\$code" -eq 0 ]; then code=1; fi
+    fi
+    printf '%s\\t%s\\t%s\\t%s\\n' '${sra_accession}' WGET_DOWNLOADER "\$state" "\$code" > status_wget_${sra_accession}.tsv
+    exit 0
     """
 }
 
 process ALTERNATIVE_RUN_BBDUK {
     tag "${sra_accession}"
-    errorStrategy 'retry'
+    errorStrategy 'terminate'
 
     input:
     tuple val(sra_accession), path(raw_read)
@@ -170,7 +171,8 @@ process ALTERNATIVE_RUN_BBDUK {
     val outdir    
 
     output:
-    tuple val(sra_accession), path("bbduk_${sra_accession}.ok"), emit: trimmed_reads_sra
+    tuple val(sra_accession), path("bbduk_${sra_accession}.ok"), optional: true, emit: trimmed_reads_sra
+    tuple val(sra_accession), path("status_bbduk_${sra_accession}.tsv"), emit: status
 
     script:
     def raw_read_1 = "${outdir}/reads/scratch/raw/${sra_accession}_1.fastq.gz"
@@ -184,30 +186,42 @@ process ALTERNATIVE_RUN_BBDUK {
     def trimmed_out = "out1=${clean_read_1} out2=${clean_read_2}"
 
     def cleanup = params.rm_reads_scratch_raw ? """
-    rm -rf ${raw_read_1}
-    rm -rf ${raw_read_2}
+        rm -f "${raw_read_1}" "${raw_read_2}"
     """ : "true"
-    
-    """
-    mkdir -p ${outdir}/reads/inspect/bbduk/
-    mkdir -p ${outdir}/reads/scratch/clean/
 
-    ${bbduk_executable} \\
-        -Xmx${max_mem} \\
-        $raw \\
-        $trimmed_out \\
-        threads=$task.cpus \\
-        $contaminants_fa \\
-        $args \\
-        2> "${bbduk_log}" && \\
-    touch bbduk_${sra_accession}.ok && \\
-    ${cleanup}
+    """
+    set +e
+    mkdir -p "${outdir}/reads/inspect/bbduk/" "${outdir}/reads/scratch/clean/"
+    if [ ! -s "${raw_read_1}" ] || [ ! -s "${raw_read_2}" ]; then
+        echo 'ERR: Missing raw reads for ${sra_accession}' >&2
+        code=1
+    else
+        ${bbduk_executable} \\
+            -Xmx${max_mem} \\
+            ${raw} \\
+            ${trimmed_out} \\
+            threads=${task.cpus} \\
+            ${contaminants_fa} \\
+            ${args} \\
+            2> "${bbduk_log}"
+        code=\$?
+    fi
+    if [ "\$code" -eq 0 ] && [ -s "${clean_read_1}" ] && [ -s "${clean_read_2}" ]; then
+        touch bbduk_${sra_accession}.ok
+        state=SUCCESS
+        ${cleanup}
+    else
+        state=FAILED
+        if [ "\$code" -eq 0 ]; then code=1; fi
+    fi
+    printf '%s\\t%s\\t%s\\t%s\\n' '${sra_accession}' ALTERNATIVE_RUN_BBDUK "\$state" "\$code" > status_bbduk_${sra_accession}.tsv
+    exit 0
     """
 }
 
 process GENOME_GENERATE_STAR {
     tag "${species_name}"
-    publishDir "${params.backbonedir}/mapping/backbone/genomeGenerate",  mode: 'symlink'
+    publishDir "${params.backbonedir}/mapping/backbone/genomeGenerate", mode: 'symlink'
     errorStrategy 'finish'
 
     input:
@@ -221,20 +235,27 @@ process GENOME_GENERATE_STAR {
 
     script:
     def genDir = "${species_name}"
+    def annotationIsGff3 = genomeGFF_file.toString().toLowerCase().matches('.*\\.(gff|gff3)(\\.gz)?$')
+    def exonParentOption = annotationIsGff3 ? '--sjdbGTFtagExonParentTranscript Parent' : ''
     """
-    mkdir -p $genDir
+    set -e
+    mkdir -p ${genDir}
+
+    SA_INDEX=\$(python3 '${projectDir}/bin/star_sa_index_nbases.py' '${genomeFASTA_file}')
 
     STAR --runThreadN ${num_threads} \\
         --runMode genomeGenerate \\
-        --genomeDir $genDir \\
+        --genomeDir ${genDir} \\
         --genomeFastaFiles ${genomeFASTA_file} \\
-        --sjdbGTFfile ${genomeGFF_file}
+        --sjdbGTFfile ${genomeGFF_file} \\
+        --genomeSAindexNbases \$SA_INDEX \\
+        ${exonParentOption}
     """
 }
 
 process MAPPING_STAR {
     tag "${sra_accession} on ${species_name}"
-    errorStrategy 'ignore'
+    errorStrategy 'terminate'
 
     input:
     tuple val(sra_accession), path(trimmed_bbduk_reads)
@@ -244,7 +265,8 @@ process MAPPING_STAR {
     val outdir 
 
     output:
-    tuple val("${sra_accession}"), path("mapping_${sra_accession}.ok"), emit: bam_sra_tuple
+    tuple val("${sra_accession}"), path("mapping_${sra_accession}.ok"), optional: true, emit: bam_sra_tuple
+    tuple val(sra_accession), path("status_star_${sra_accession}.tsv"), emit: status
 
     script:
     def fileNamePrefix = "${outdir}/mapping/inspect/${sra_accession}/${species_name}_${sra_accession}_"
@@ -255,34 +277,52 @@ process MAPPING_STAR {
     def sortedBAM = "${fileNamePrefix}Aligned.sortedByCoord.out.bam"
 
     def cleanup = params.rm_reads_scratch_clean ? """
-    rm -rf ${clean_read_1} && \\
-    rm -rf ${clean_read_2}
+        rm -f "${clean_read_1}" "${clean_read_2}"
     """ : "true"
 
     """
-    mkdir -p ${outdir}/mapping/inspect/${sra_accession}
-
-    STAR --runThreadN ${num_threads} \\
-        --genomeDir $genome_idx_dir \\
-        --outFileNamePrefix $fileNamePrefix \\
-        --outSAMtype BAM Unsorted \\
-        --readFilesIn ${reads_input} \\
-        --readFilesCommand zcat \\
-        --outSAMstrandField intronMotif \\
-        --twopassMode Basic
-
-    samtools sort -@ ${num_threads} -o $sortedBAM $unsortedBAM
-    samtools index $sortedBAM && \\
-    rm $unsortedBAM && \\
-    touch mapping_${sra_accession}.ok && \\
-    ${cleanup} 
+    set +e
+    mkdir -p "${outdir}/mapping/inspect/${sra_accession}"
+    if [ ! -s "${clean_read_1}" ] || [ ! -s "${clean_read_2}" ]; then
+        echo 'ERR: Missing trimmed FASTQ pair for ${sra_accession}' >&2
+        code=1
+    else
+        STAR --runThreadN ${num_threads} \\
+            --genomeDir "${genome_idx_dir}" \\
+            --outFileNamePrefix "${fileNamePrefix}" \\
+            --outSAMtype BAM Unsorted \\
+            --readFilesIn ${reads_input} \\
+            --readFilesCommand zcat \\
+            --outSAMstrandField intronMotif \\
+            --twopassMode Basic
+        code=\$?
+        if [ "\$code" -eq 0 ]; then
+            samtools sort -@ ${num_threads} -o "${sortedBAM}" "${unsortedBAM}"
+            code=\$?
+        fi
+        if [ "\$code" -eq 0 ]; then
+            samtools index "${sortedBAM}"
+            code=\$?
+        fi
+    fi
+    if [ "\$code" -eq 0 ] && [ -s "${sortedBAM}" ] && [ -s "${sortedBAM}.bai" ]; then
+        touch mapping_${sra_accession}.ok
+        state=SUCCESS
+        rm -f "${unsortedBAM}"
+        ${cleanup}
+    else
+        state=FAILED
+        if [ "\$code" -eq 0 ]; then code=1; fi
+    fi
+    printf '%s\\t%s\\t%s\\t%s\\n' '${sra_accession}' MAPPING_STAR "\$state" "\$code" > status_star_${sra_accession}.tsv
+    exit 0
     """
 }
 
 process SGSEQ {
     tag "${sra_accession} on ${species_name}"
     publishDir "${params.outdir}/SGSeq/results/", mode: 'copy'
-    errorStrategy 'ignore'
+    errorStrategy 'terminate'
 
     input:
     // tuple path(bam_dir_path), path(bam_index_file), path(bam_actual_file), val(sra_accession)
@@ -296,7 +336,7 @@ process SGSEQ {
     output:
     tuple val ("SGSEQ"), 
           val(sra_accession),
-          path("${sra_accession}_sgseq/"), emit: sgseq_results
+          path("${sra_accession}_sgseq/"), optional: true, emit: sgseq_results
           
 
     tuple val(sra_accession), 
@@ -307,13 +347,25 @@ process SGSEQ {
           path("${sra_accession}_sgseq/sgseq_MXE.tsv"),
           path("${sra_accession}_sgseq/sgseq_AFE.tsv"),
           path("${sra_accession}_sgseq/sgseq_ALE.tsv"),
-          path("${sra_accession}_sgseq/sgseq_constitutive.tsv"), emit: sgseq_csv_sra    
+          path("${sra_accession}_sgseq/sgseq_constitutive.tsv"), optional: true, emit: sgseq_csv_sra    
+
+    tuple val(sra_accession), path("status_sgseq_${sra_accession}.tsv"), emit: status
 
     script:
     def bam_file = "${outdir}/mapping/inspect/${sra_accession}/${species_name}_${sra_accession}_Aligned.sortedByCoord.out.bam"
     def outPrefix = "${sra_accession}_sgseq"
     """
+    set +e
     SGSeq_v2.2.R -g "${genomeGFF_file}" -c ${num_cores} -b "${bam_file}" -s "${sra_accession}" -o $outPrefix --lib_paths "${r_libs_path}"
+    code=\$?
+    if [ "\$code" -eq 0 ] && [ -d "${outPrefix}" ]; then
+      state=SUCCESS
+    else
+      state=FAILED
+      if [ "\$code" -eq 0 ]; then code=1; fi
+    fi
+    printf '%s\\t%s\\t%s\\t%s\\n' '${sra_accession}' SGSEQ "\$state" "\$code" > status_sgseq_${sra_accession}.tsv
+    exit 0
     
     """
 }
@@ -353,7 +405,9 @@ process MAJIQ_SJ {
     path annotation_db
 
     output:
-    tuple val("${sra_accession}"), path("bam_${species_name}_${sra_accession}.ok"), emit: sj_file
+    tuple val("${sra_accession}"), path("bam_${species_name}_${sra_accession}.ok"), optional: true, emit: sj_file
+
+    tuple val(sra_accession), path("status_majiq_sj_${sra_accession}.tsv"), emit: status
 
     script:
     def majiq_annotation = "${outdir}/majiq/backbone/annotation_${species_name}.zarr"
@@ -361,8 +415,17 @@ process MAJIQ_SJ {
     def bam_file = "${outdir}/mapping/inspect/${sra_accession}/${species_name}_${sra_accession}_Aligned.sortedByCoord.out.bam"
     """
     mkdir -p ${outdir}/majiq/scratch/${sra_accession}/sj
-    majiq-v3 sj ${bam_file} ${majiq_annotation} ${majiq_sj} --overwrite && \\
-    touch bam_${species_name}_${sra_accession}.ok
+    set +e
+    majiq-v3 sj ${bam_file} ${majiq_annotation} ${majiq_sj} --nthreads ${task.cpus} --overwrite
+    code=\$?
+    if [ "\$code" -eq 0 ]; then
+      state=SUCCESS
+      touch bam_${species_name}_${sra_accession}.ok
+    else
+      state=FAILED
+    fi
+    printf '%s\\t%s\\t%s\\t%s\\n' '${sra_accession}' MAJIQ_SJ "\$state" "\$code" > status_majiq_sj_${sra_accession}.tsv
+    exit 0
     """
 }
 
@@ -384,7 +447,7 @@ process MAJIQ_BUILD{
     def majiq_sj = "${outdir}/majiq/scratch/${sra_accession}/sj/${species_name}_${sra_accession}.Aligned.sortedByCoord.out.bam.sj"
     """
     mkdir -p ${outdir}/majiq/scratch/${sra_accession}/build
-    majiq-v3 build ${majiq_annotation} ${majiq_build} --sjs ${majiq_sj} --overwrite && \\
+    majiq-v3 build ${majiq_annotation} ${majiq_build} --sjs ${majiq_sj} --nthreads ${task.cpus} --overwrite && \\
     touch build_${species_name}_${sra_accession}_sg.ok
     """
 }
@@ -406,7 +469,7 @@ process MAJIQ_PSI {
     def majiq_sj = "${outdir}/majiq/scratch/${sra_accession}/sj/${species_name}_${sra_accession}.Aligned.sortedByCoord.out.bam.sj"
     """
     mkdir -p ${outdir}/majiq/scratch/${sra_accession}/psi
-    majiq-v3 psi-coverage ${majiq_build} ${majiq_psi} ${majiq_sj} --overwrite && \\
+    majiq-v3 psi-coverage ${majiq_build} ${majiq_psi} ${majiq_sj} --nthreads ${task.cpus} --overwrite && \\
     touch psi_${species_name}_${sra_accession}.ok
     """
 }
@@ -428,7 +491,7 @@ process MAJIQ_SG_COVERAGE{
     def majiq_sj = "${outdir}/majiq/scratch/${sra_accession}/sj/${species_name}_${sra_accession}.Aligned.sortedByCoord.out.bam.sj"
     """
     mkdir -p ${outdir}/majiq/scratch/${sra_accession}/sg_coverage
-    majiq-v3 sg-coverage ${majiq_build} ${majiq_sg_coverage} ${majiq_sj} --overwrite && \\
+    majiq-v3 sg-coverage ${majiq_build} ${majiq_sg_coverage} ${majiq_sj} --nthreads ${task.cpus} --overwrite && \\
     touch build_sg_${species_name}_${sra_accession}.ok
     """
 }
@@ -474,7 +537,7 @@ process MAJIQ_VOILA_MODULIZE{
     """
     mkdir -p ${outdir}/majiq/results
     
-    voila modulize ${majiq_build} ${majiq_psi}  ${majiq_sg_coverage}  -d ${sra_accession}_majiq -j ${majiq_cores} --keep-constitutive --show-all --show-read-counts --overwrite && \\
+    voila modulize ${majiq_build} ${majiq_psi}  ${majiq_sg_coverage}  -d ${sra_accession}_majiq -j ${task.cpus} --keep-constitutive --show-all --show-read-counts --overwrite && \\
     ${cleanup}
     """
 }
@@ -498,29 +561,71 @@ process CREATE_DB{
 
 process POPULATE_DB{
     maxForks 1
-    errorStrategy 'finish'
+    errorStrategy 'terminate'
     publishDir "${params.outdir}/db/", mode: 'copy' // IS THAT RIGHT?
 
     input:
-    tuple val(majiq), val(sra_accession_majiq), path(path_to_results_majiq) // get this from pevious processes
-    tuple val(sgseq), val(sra_accession_sgseq), path(path_to_results_sgseq)
+    tuple val(sra_accession), path(path_to_results_majiq), path(path_to_results_sgseq)
     tuple val(db), path(db_ok) // from create db
     path genomeGFF_file  // ref_exons
     val species_code
     val species_name
 
-    output: // update
-    path("db_*.ok"), emit: populate_ok
+    output:
+    tuple val(sra_accession),
+          path("db_majiq_${sra_accession}.ok"),
+          path("db_sgseq_${sra_accession}.ok"), emit: populate_ok
 
     script:
+    // Select the Python interpreter explicitly from the JSON Conda environment.
+    def condaEnv = params.environment?.conda_env
+    if (!condaEnv) error "POPULATE_DB requires environment.conda_env in JSON"
+    def pythonExe = new File(condaEnv.toString(), 'bin/python').absolutePath
     """
-    majiq_Parser.py --results_dir ${path_to_results_majiq} --db $db --ref_exons ${genomeGFF_file}  --genome_version ${species_code} --species "${species_name}" --sra_id ${sra_accession_majiq} && \\
-    touch db_majiq_${sra_accession_majiq}.ok
-    sleep 1
-    
-    SGSeq_parser.py --results_dir ${path_to_results_sgseq} --db $db --ref_exons ${genomeGFF_file}  --genome_version ${species_code} --species "${species_name}" --sra_id ${sra_accession_sgseq} && \\
-    touch db_sgseq_${sra_accession_sgseq}.ok
-    sleep 1
+    test -x '${pythonExe}' || { echo 'Python interpreter not executable: ${pythonExe}' >&2; exit 1; }
+    set -euo pipefail
+
+    '${pythonExe}' '${projectDir}/bin/majiq_Parser.py' --results_dir ${path_to_results_majiq} --db "${db}" --ref_exons ${genomeGFF_file} --genome_version ${species_code} --species "${species_name}" --sra_id ${sra_accession}
+    touch db_majiq_${sra_accession}.ok
+
+    '${pythonExe}' '${projectDir}/bin/SGSeq_parser.py' --results_dir ${path_to_results_sgseq} --db "${db}" --ref_exons ${genomeGFF_file} --genome_version ${species_code} --species "${species_name}" --sra_id ${sra_accession}
+    # Import QC only after both analysis parsers succeeded.
+    '${pythonExe}' '${projectDir}/bin/import_sample_qc.py' \\
+        --db "${db}" \\
+        --sra-id '${sra_accession}' \\
+        --genome-version '${species_code}' \\
+        --bbduk-log "${params.outdir}/reads/inspect/bbduk/${sra_accession}.bbduk.log" \\
+        --star-log "${params.outdir}/mapping/inspect/${sra_accession}/${species_code}_${sra_accession}_Log.final.out"
+    touch db_sgseq_${sra_accession}.ok
     """
 }
 
+
+ 
+// Last stage of a sample lifecycle. Runs after both analyses and DB import.
+// Intermediate BAM removal is deliberately delayed until both branches end.
+process FINALIZE_SAMPLE {
+    tag "${sra_accession}"
+    errorStrategy 'terminate'
+
+    input:
+    tuple val(sra_accession), path(majiq_db_ok), path(sgseq_db_ok)
+    val outdir
+    val species_name
+
+    output:
+    tuple val(sra_accession), path("finished_${sra_accession}.ok"), emit: completed
+
+    script:
+    def bam = "${outdir}/mapping/inspect/${sra_accession}/${species_name}_${sra_accession}_Aligned.sortedByCoord.out.bam"
+    def cleanup = params.rm_mapping_inspect_bamfiles ? """
+        rm -f "${bam}" "${bam}.bai"
+    """ : "true"
+    """
+    set -e
+    test -f "${majiq_db_ok}"
+    test -f "${sgseq_db_ok}"
+    ${cleanup}
+    touch finished_${sra_accession}.ok
+    """
+}
