@@ -166,6 +166,45 @@ Then run the comparator described above using `NEW_DB` as `--candidate`.
 This is the most direct scientific regression test because it reuses identical
 MAJIQ and SGSeq input results.
 
+## Phase 2: vectorized MAJIQ and SGSeq PSI deduplication
+
+The original per-junction `groupby().apply()` computations have been replaced
+by vectorized grouped reductions in `bin/junction_aggregation.py`. Only these
+calculations were changed; MAJIQ/VOILA analysis and SQLite schema are unchanged.
+
+Run the new equivalence tests:
+
+```bash
+python3 reads_processing/tests/test_junction_aggregation.py
+```
+
+The regression tests compare **the original functions** against the optimized
+versions for duplicate junctions, zero weights, missing PSI/read counts,
+missing junction IDs, and randomized cases. They use tolerance `1e-13`.
+
+To validate the actual sample, repeat the isolated single-sample batch import
+described below using a **new candidate database filename**, e.g.
+`splicescape_v22_vectorized.sqlite`, then run:
+
+```bash
+python3 reads_processing/bin/compare_sample_databases.py \
+  --reference /absolute/path/to/old_one_sample.sqlite \
+  --candidate /absolute/path/to/splicescape_v22_vectorized.sqlite \
+  --sample SRR17687198 \
+  --genome-version Athaliana_447
+```
+
+The expected result is `MATCH (0 discrepancies)`. This must be observed
+before treating the optimized importer as scientifically equivalent on real
+data.
+
+For performance, use the task logs and `import_profile_*.jsonl` files,
+particularly the elapsed time of `_deduplicate_majiq_junctions` and
+`_deduplicate_sgseq_junctions`. Benchmark on the **same node-local
+filesystem**, same input TSVs, and a fresh database. These are end-to-end
+tests; the synthetic equivalence tests do not constitute a real-data speedup
+measurement.
+
 ## Known v2.2 limitations
 
 - The existing blocking semaphore is still used for admission. That
