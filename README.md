@@ -1,176 +1,257 @@
-#  SpliceScape
-SpliceScape is a bioinformatics pipeline designed for the large-scale identification and characterization of splicing events from RNA-Seq data. Built using the Nextflow workflow orchestrator, it provides an efficient, reproducible, and scalable solution for generating comprehensive splicing landscapes of an organism.
+# SpliceScape
 
-The pipeline automates all critical steps of splicing analysis, from raw data processing to the final characterization of events. It integrates state-of-the-art tools to ensure high accuracy and performance, including:
+**Version 2.1**
 
-* **Data Cleaning:** BBDuK 
-* **Splicing-Aware Alignment:** STAR 
-* **Splicing Event Identification and Quantification:** MAJIQ and SGSeq 
+SpliceScape is a Nextflow pipeline for large-scale identification, quantification, and characterization of alternative splicing events from paired-end RNA-seq data.
 
-This approach allows SpliceScape to handle large public datasets, making it a powerful tool for comparative transcriptomics and for exploring the dynamics of RNA processing.
+The workflow integrates **BBDuk** (read cleaning), **STAR** (splice-aware alignment), **SGSeq** and **MAJIQ v3 / VOILA** (splicing analysis), and **SQLite** (integrated results and sample-level quality-control statistics). SpliceScape supports configurable concurrency and sample-level recovery for selected processing failures.
 
-### 📊 The diagram below provides an overview of the SpliceScape workflow, from the initial input files to the final results.
+![SpliceScape workflow](images/GeneralViewPipeline.png)
 
-![.](https://github.com/labbces/SpliceScape/blob/main/images/GeneralViewPipeline.png)
+## 1. Installation
 
-### ✅ The pipeline is divided into distinct stages:
+### 1.1 Clone the repository
 
-1. **Pre-processing:** Metadata acquisition and filtering. 
-2. **Core Pipeline:** Downloading reads, quality control (BBDuK), genome indexing (STAR), mapping (STAR), and splicing analysis (MAJIQ & SGSeq). 
-3. **Post-processing:** Parsing and integrating results into a unified database. 
-
-# Quick Start
-### Dependencies 
-SpliceScape has several dependencies, below we list some of the main dependencies that must be installed prior to using the pipeline. We recommend to use the [conda environment](envs/environment.yml) to install all dependencies.
-
-**Core Software & Tools**
-
-* Nextflow (v24.10.5 or later) 
-* STAR 
-* BBMap (provides BBDuK v35.85) 
-* Samtools 
-* MAJIQ 
-* ffq (from pip) 
-* wget & md5sum (Standard Linux/macOS utilities)
-
-**Programming Environments**
-
-* Python (v3.7 or higher)
-* R (v4.4)
-
-**Required Python Libraries**
-
-* requests (v2.28.1)
-* beautifulsoup4 (v0.0.1)
-* biopython (v1.79)
-* pandas (v1.4.0)
-
-**Required R Libraries**
-
-* optparse (v1.7.5)
-* SGSeq (v1.38.0)
-* GenomicFeatures (v1.56.0)
-
-### Input Files
-
-SpliceScape requires three main inputs to start an analysis:
-
-* **Reference Genome:** An uncompressed reference genome file in `.fasta` format, preferably downloaded from Phytozome.
-* **Genome Annotation:** An uncompressed genome annotation file in `.gff3` format, also from Phytozome.
-* **Sample List:** A plain text (`.txt`) file containing the SRA accessions for your target samples, with one identifier per line.
-
-For detailed instructions on how to obtain and format these files, please refer to the **[SpliceScape Wiki](https://github.com/labbces/SpliceScape/wiki)**.
-
-## Running
-
-### 1. **Clone the repository:**
-   
-```
+```bash
 git clone https://github.com/labbces/SpliceScape.git
 cd SpliceScape
 ```
 
-### 2. **Prepare input files:**
+### 1.2 Create the software environment
 
-SpliceScape is designed to work with the standard file formats and structures provided by the [Phytozome](https://phytozome-next.jgi.doe.gov/) database. For the pipeline to locate the genome and annotation files correctly, you must follow a specific directory structure.
+The repository provides [`envs/environment_majiqv3.yml`](envs/environment_majiqv3.yml), including Python, R/Bioconductor (SGSeq), BBDuk/BBMap, STAR, samtools, and Nextflow 25.04.8.
 
-The three main files required for each species are:
+**Before creating the environment:** the YAML currently includes installation-specific `name` and `prefix` entries (`/Storage/progs/SpliceScape_env_p312`). Remove those two lines from your local copy of the YAML when installing outside the original development system.
 
-* A reference genome in FASTA format (.fa). - From Phytozome
-* A genome annotation file in GFF3 format (.gff3). - From Phytozome
-* A plain text file (.txt) listing the target SRA accessions, with one per line. 
+```bash
+# Make a local, portable copy of the supplied specification.
+sed '/^name:/d; /^prefix:/d' envs/environment_majiqv3.yml > environment_majiqv3.local.yml
 
-A critical requirement is that both genome files must be uncompressed before running the pipeline. SpliceScape does not handle gzipped files (e.g., .fa.gz) for the genome and annotation inputs.
+conda env create \
+  --prefix /path/to/SpliceScape_env \
+  --file environment_majiqv3.local.yml
 
-**Recommended Directory Structure**
-
-We recommend creating a main directory for your project's input data and then creating a subdirectory for each species downloaded from Phytozome. Inside each species directory, you should have two subdirectories: assembly and annotation.
-
-```
-/path/to/your/project/
-└── data/
-    └── Phytozome/
-        └── Athaliana_447_Araport11/      <-- Main species directory
-            ├── assembly/
-            │   └── Athaliana_447_TAIR10.fa   <-- Place the uncompressed FASTA file here
-            └── annotation/
-                └── Athaliana_447_Araport11.gene_exons.gff3  <-- Place the uncompressed GFF3 file here
+conda activate /path/to/SpliceScape_env
 ```
 
-* For more details, please see our [0.3 Input Files: Preparing Genome and Transcriptome Data](https://github.com/labbces/SpliceScape/wiki/0.3-Input-Files:-Preparing-Genome-and-Transcriptome-Data) page
+Replace `/path/to/SpliceScape_env` with an absolute, writable installation path. Mamba may be used instead of Conda.
 
+Check core tools:
 
-### 3. **Configure the pipeline:**
-   
-The pipeline is primarily configured using the [splicescape_paired.config file](https://github.com/labbces/SpliceScape/blob/main/reads_processing/splicescape_paired.config).  You must edit this file to provide the paths to your input files and executables. Below are the most critical parameters to set:
-
-| Section          | "Name/Variable"   | Description                                                                 | Example |
-|------------------|-------------------|-----------------------------------------------------------------------------|---------|
-|                  | workDir           | Where files generated by Splicescape will be saved.                         | `"/home/Splicescape/results"` |
-| params           | outdir            | Where Splicescape results will be saved (inside workDir).                   | `"${workDir}/output"` |
-|                  | species           | Species name - Must at least start with the Phytozome naming convention.    | `"Athaliana_447"` |
-|                  | reads_file        | File containing SRR identifiers of interest (one per line).                 | `"/home/Splicescape/data/SRRs.txt"` |
-|                  | genomeFASTA       | Path to genome sequence of interest.                                        | `"/home/Splicescape/data/Phytozome/Athaliana_447_Araport11/assembly/Athaliana_447_TAIR10.fa"` |
-|                  | genomeGFF         | Path to genome annotation.                                                  | `"/home/Splicescape/data/Phytozome/Athaliana_447_Araport11/annotation/Athaliana_447_Araport11.gene_exons.gff3"` |
-|                  | genome_path       | Path to Phytozome assembly directory.                                       | `"/home/Splicescape/data/Phytozome/Athaliana_447_Araport11/assembly"` |
-|                  | genome            | Path containing both assembly and annotation.                                | `"/home/Splicescape/data/Phytozome/Athaliana_447_Araport11"` |
-|                  | threads           | Cores for genomic index generation with STAR.                               | `12` |
-|                  | bbduk             | Path to BBDuK executable.                                                   | `"/home/Splicescape/progs/bbmap_35.85/bbduk2.sh"` |
-|                  | minlength         | Minimum read length for BBDuK cleaning.                                     | `60` |
-|                  | trimq             | Quality threshold for base trimming in sequencing reads (BBDuK).            | `20` |
-|                  | k                 | k-mer size used by BBDuK to find matches and remove specific sequences.     | `27` |
-|                  | rref              | Path to file with sequences to be removed from reads (BBDuK).               | `"/home/Splicescape/progs/BBMap/resources/adapters.fa"` |
-|                  | maxmem            | Maximum memory allocated for BBDuK.                                         | `"20g"` |
-|                  | r_libs            | Path where R libraries are installed.                                        | `"/home/Splicescape/R/library"` |
-|                  | sgseq_cores       | Maximum cores used by SGSeq.                                                | `4` |
-|                  | majiq_path        | Path to MAJIQ bin directory.                                                | `"/home/Splicescape/majiq/bin"` |
-|                  | majiq_cores       | Maximum cores used by MAJIQ.                                                | `8` |
-| executor         | queueSize         | Maximum number of files that can be simultaneously submitted to a cluster.   | `50` |
-| Activity Report (Report, timeline, trace) | enabled  | Enables report generation.                                                  | `TRUE` |
-|                  | file              | Report filenames.                                                           | `"report.html"`, `"timeline.html"`, `"trace.txt"` |
-|                  | overwrite         | Allows overwriting files with same name (Caution when using -resume).       | `TRUE` |
-| SGE Cluster Profile | executor       | Instructs Nextflow to submit each task as a "job" to SGE scheduler.         | `sge` |
-|                  | queue             | Specifies default SGE queue for job submission.                             | `splicing.q@cluster` |
-|                  | clusterOptions    | Default options passed directly to SGE's qsub command for each job.         | `-S /bin/bash -V -pe smp 2` |
-|                  | scratch           | Enables use of fast "scratch" directory on cluster for intermediate files.  | `FALSE` |
-|                  | maxForks          | Limits execution to maximum concurrent processes of each type.              | `5` |
-|                  | withName          | Overrides default settings for specific processes (resource allocation).    | `"DOWNLOAD_READ_FTP { clusterOptions = '-S /bin/bash -pe smp 2 -l h_vmem=2G -V', maxForks = 10 }"` |
-
-### 4. **Run SpliceScape:**
-   
-Execute the pipeline using the nextflow run command. If you are using a cluster with a scheduler like SGE, you can use a profile.
-
-```
-nextflow run splicescape_paired.nf -c splicescape_paired.config -profile sge -resume
+```bash
+python --version
+nextflow -version
+STAR --version
+samtools --version
+Rscript --version
 ```
 
-Please find this files in [reads_processing](https://github.com/labbces/SpliceScape/tree/main/reads_processing).
+### 1.3 Install MAJIQ v3 separately
 
-### ☁️ Alternative Download from a Private Cloud
+**MAJIQ v3 is not included in the Conda YAML** and must be installed according to the MAJIQ developers' instructions. Obtain the appropriate MAJIQ license and follow the official installation procedure:
 
-In cases where direct downloads from the NCBI SRA are not feasible or have failed, SpliceScape provides an alternative workflow to download reads from a private, password-protected server where the data has been pre-staged.
+- [MAJIQ official website](https://majiq.biociphers.org/)
+- [MAJIQ download and licensing](https://majiq.biociphers.org/app_download/)
+- [MAJIQ installation documentation](https://biociphers.bitbucket.io/majiq-docs/getting-started-guide/installing.html)
 
-To use this method, you must:
+Install MAJIQ/VOILA into the environment used to run SpliceScape and confirm that the MAJIQ command is accessible:
 
-1. Run the `splicescape_paired_cloud.nf` pipeline script instead of the default one.
-2. Fill the following parameters for your private server to your `.config` file:
-
-| Parameter       | Description                                        |
-|:---------------:|:--------------------------------------------------:|
-| params.url      | The base URL of the directory on the cloud server. |
-| params.user     | The username required for authentication.          |
-| params.password | The password required for authentication.          |
-
-
-Your run command will then specify the alternative workflow script:
-
-```
-nextflow run splicescape_paired_cloud.nf -c your_config_file.config -profile sge -resume
+```bash
+majiq --version
 ```
 
-This will use the `WGET_DOWNLOADER` process to securely download the files before proceeding with the standard cleaning and analysis steps.
+Keep the license file in a secure location. Its path is provided in the run-specific JSON configuration.
 
-# Full Documentation
-For a detailed explanation of each step, advanced configuration, and tutorials, please visit our [SpliceScape Wiki](https://github.com/labbces/SpliceScape/wiki).
+## 2. Input files
 
+The pipeline requires:
 
+1. **Genome FASTA** — uncompressed `.fa` or `.fasta`.
+2. **Genome annotation** — uncompressed GFF3/GTF with gene and exon annotations suitable for the splicing tools.
+3. **Sample manifest** — text file with one accession per line.
+
+Example `samples.txt`:
+
+```text
+SRR17687198
+SRR23406859
+SRR12548574
+```
+
+The currently active workflow uses **`WGET_DOWNLOADER`**, which retrieves paired FASTQ files from the server configured in the JSON. Provide a URL from which files can be accessed using the sample accession, with corresponding `_1.fastq.gz` and `_2.fastq.gz` read files. **The active workflow does not download directly from NCBI based solely on SRA accessions.**
+
+For background on reference-file preparation, see the [SpliceScape Wiki](https://github.com/labbces/SpliceScape/wiki).
+
+## 3. JSON configuration
+
+SpliceScape v2.1 uses two complementary configurations:
+
+- A **JSON file** supplies sample inputs, reference paths, biological parameters, output locations, cleanup options, credentials, and concurrency.
+- [`reads_processing/splicescape-v2.config`](reads_processing/splicescape-v2.config) defines Nextflow executor profiles and CPU/memory allocations. Adjust its SGE queue and resources for your installation.
+
+Create a JSON file, for example `splicescape.json`:
+
+```json
+{
+  "species": "Athaliana_447",
+  "species_name": "Arabidopsis thaliana",
+  "reads_file": "/data/project/samples.txt",
+  "genomeFASTA": "/data/genomes/Athaliana_447_TAIR10.fa",
+  "genomeGFF": "/data/genomes/Athaliana_447_Araport11.gene_exons.gff3",
+
+  "outdir": "/data/project/results",
+  "backbonedir": "/data/project/reference",
+  "db": "/data/project/results/db/splicescape.sqlite",
+
+  "max_active_samples": 3,
+  "threads": 12,
+  "sgseq_cores": 8,
+  "majiq_cores": 12,
+
+  "bbduk": "/path/to/SpliceScape_env/bin/bbduk.sh",
+  "minlength": 60,
+  "trimq": 20,
+  "k": 27,
+  "rref": "/data/references/adapters.fa",
+  "maxmem": "20g",
+
+  "r_libs": "/path/to/R/library",
+
+  "url": "https://example.org/rnaseq/",
+  "user": "download_username",
+  "password": "download_password",
+
+  "rm_reads_scratch_raw": true,
+  "rm_reads_scratch_clean": true,
+  "rm_reads_inspect_bbduk_logs": false,
+  "rm_mapping_inspect_bamfiles": false,
+  "rm_majiq_scratch": false,
+
+  "environment": {
+    "conda_env": "/path/to/SpliceScape_env",
+    "majiq_license_file": "/path/to/majiq_license.lic"
+  }
+}
+```
+
+**Replace the illustrative paths, URL, credentials, and filenames.** The `bbduk` field must point to the actual BBDuk executable installed on your system; its name may vary. Prefer absolute paths and ensure output and database directories are writable. Protect configuration files containing credentials, for example with `chmod 600 splicescape.json`. Do not commit credentials or license files.
+
+### 3.1 Input and output parameters
+
+| Parameter | Description |
+|---|---|
+| `species` | Reference identifier used in output names, indexing, and database records (e.g. `Athaliana_447`). |
+| `species_name` | Descriptive organism name stored with the database records. |
+| `reads_file` | File with one paired-end sample accession per line. |
+| `genomeFASTA` | Path to uncompressed reference FASTA. |
+| `genomeGFF` | Path to uncompressed reference annotation. |
+| `outdir` | Main directory for outputs and intermediate files. |
+| `backbonedir` | Directory for shared reference resources such as the STAR index. |
+| `db` | SQLite database path. |
+
+### 3.2 Concurrency and processing resources
+
+| Parameter | Description |
+|---|---|
+| `max_active_samples` | Maximum number of admitted samples in their complete processing lifecycle; default **2**. |
+| `threads` | Threads passed to STAR genome indexing and alignment. |
+| `sgseq_cores` | Core-count argument for SGSeq. |
+| `majiq_cores` | Core-count argument for MAJIQ/VOILA stages. |
+
+For example, `"max_active_samples": 3` allows at most three concurrently admitted samples. When a sample finishes or reaches a **supported** terminal failure state, its slot is returned and another sample may start. Actual task scheduling is also limited by the execution profile and available cluster resources.
+
+### 3.3 BBDuk parameters
+
+| Parameter | Description |
+|---|---|
+| `bbduk` | Full path to the BBDuk executable or launch script. |
+| `minlength` | Minimum length retained after trimming. |
+| `trimq` | Quality threshold used for read trimming. |
+| `k` | K-mer size for matching the contaminant/reference FASTA. |
+| `rref` | Adapter or contaminant reference FASTA. |
+| `maxmem` | Java memory allocation for BBDuk, e.g. `20g`. |
+
+### 3.4 Environment and download parameters
+
+| Parameter | Description |
+|---|---|
+| `r_libs` | Directory containing the required R libraries. |
+| `environment.conda_env` | Conda environment prefix; its `bin` directory is prepended to `PATH` by the launcher. |
+| `environment.majiq_license_file` | Path to the MAJIQ license; the launcher exports `MAJIQ_LICENSE_FILE`. |
+| `url` | Base URL for paired FASTQ download via `WGET_DOWNLOADER`. |
+| `user` | Download server username. |
+| `password` | Download server password. |
+
+### 3.5 Cleanup parameters
+
+| Parameter | Description |
+|---|---|
+| `rm_reads_scratch_raw` | Delete raw downloaded FASTQs after successful trimming. |
+| `rm_reads_scratch_clean` | Delete cleaned FASTQs after successful mapping. |
+| `rm_reads_inspect_bbduk_logs` | Control removal of BBDuk inspection logs in the applicable pipeline path. |
+| `rm_mapping_inspect_bamfiles` | Delete intermediate mapped BAMs during successful sample finalization. |
+| `rm_majiq_scratch` | Control removal of MAJIQ scratch files. |
+
+All cleanup settings are JSON booleans (`true` or `false`). Retaining intermediate files is useful for troubleshooting. BBDuk and STAR summary logs must remain available until QC import has completed.
+
+## 4. Running SpliceScape
+
+The supported entry point is [`reads_processing/run_splicescape.py`](reads_processing/run_splicescape.py). Run these commands from the repository root.
+
+### 4.1 SGE cluster
+
+```bash
+python3 reads_processing/run_splicescape.py \
+  --params-file /absolute/path/to/splicescape.json \
+  -profile sge
+```
+
+Before running, edit the SGE queue and per-process resource requests in [`reads_processing/splicescape-v2.config`](reads_processing/splicescape-v2.config) if needed. The supplied SGE profile currently uses `introns.q`.
+
+### 4.2 Local execution
+
+```bash
+python3 reads_processing/run_splicescape.py \
+  --params-file /absolute/path/to/splicescape.json \
+  -profile local
+```
+
+Ensure the local machine has enough RAM and CPU capacity for STAR, SGSeq, and MAJIQ tasks.
+
+### 4.3 Resume a previous execution
+
+```bash
+python3 reads_processing/run_splicescape.py \
+  --params-file /absolute/path/to/splicescape.json \
+  -profile sge \
+  --resume
+```
+
+**Resume caveat:** Some intermediate files are kept outside the Nextflow work directories and may have been removed by cleanup options. Verify that required external artifacts are still present before resuming. For an independent validation run, use a fresh output directory without `--resume`.
+
+## 5. Results and QC statistics
+
+SpliceScape writes BBDuk preprocessing outputs, STAR mapping outputs, SGSeq and MAJIQ results, and an integrated SQLite database.
+
+For samples whose **SGSeq and MAJIQ analyses and database import complete successfully**, the SQLite `sample_qc_metrics` table contains numeric BBDuk and STAR summary statistics:
+
+```sql
+SELECT sra_id, tool, metric, numeric_value, text_value
+FROM sample_qc_metrics
+WHERE sra_id = 'SRR17687198'
+ORDER BY tool, metric;
+```
+
+QC metrics are stored using an idempotent UPSERT keyed by sample accession, genome version, tool, and metric. Re-importing the same metrics updates existing rows without duplicating them.
+
+## 6. Failure handling and known limitations
+
+Version 2.1 has sample-level failure detection for `WGET_DOWNLOADER`, `ALTERNATIVE_RUN_BBDUK`, `MAPPING_STAR`, `SGSEQ`, and `MAJIQ_SJ`. A supported sample failure is recorded without necessarily aborting the remaining batch.
+
+Recovery for later MAJIQ stages, `POPULATE_DB`, `FINALIZE_SAMPLE`, scheduler-level failures, and some resume scenarios is **not yet implemented**. See [`reads_processing/TODO.md`](reads_processing/TODO.md).
+
+## 7. Documentation
+
+- [SpliceScape Wiki](https://github.com/labbces/SpliceScape/wiki)
+- [MAJIQ documentation](https://biociphers.bitbucket.io/majiq-docs/)
+- [MAJIQ download and licensing](https://majiq.biociphers.org/app_download/)
