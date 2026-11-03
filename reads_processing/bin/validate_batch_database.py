@@ -63,6 +63,9 @@ def validate(database, status_file, genome_version, atol=1e-9, rtol=1e-9):
         missing_qc = successful - samples_with_qc
         if missing_qc:
             issues.append(f"successful samples lacking QC metrics: {sorted(missing_qc)}")
+        missing_stats = successful - samples_with_stats
+        if missing_stats:
+            issues.append(f"successful samples lacking junction statistics: {sorted(missing_stats)}")
         for sample in successful:
             tools = {row[0] for row in conn.execute(
                 """SELECT DISTINCT tool FROM sample_qc_metrics
@@ -111,8 +114,18 @@ def validate(database, status_file, genome_version, atol=1e-9, rtol=1e-9):
                 issues.append(f"missing summary row: {expected['junctionID']}")
                 mismatches += 1
                 continue
-            changed = [name for name in METRICS
-                       if not equivalent(expected[name], actual[name], atol, rtol)]
+            # Legacy summary rows default to zero before a given tool has
+            # any observations; SQL AVG/SUM over all-NULL values yields NULL.
+            # Preserve those original default-zero semantics.
+            changed = []
+            for name in METRICS:
+                expected_value = expected[name]
+                if name.endswith("_majiq") and expected["n_of_samples_majiq"] == 0:
+                    expected_value = 0
+                if name.endswith("_sgseq") and expected["n_of_samples_sgseq"] == 0:
+                    expected_value = 0
+                if not equivalent(expected_value, actual[name], atol, rtol):
+                    changed.append(name)
             if changed:
                 mismatches += 1
                 if mismatches <= 10:
