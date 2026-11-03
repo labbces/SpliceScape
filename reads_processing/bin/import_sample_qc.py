@@ -54,7 +54,7 @@ def parse_bbduk(path):
         # Result: 19602676 reads (97.99%) 2930000000 bases (97.65%)
         # Extract only values explicitly followed by 'reads' or 'bases'.
         counts = re.findall(
-            r"([0-9][0-9,]*)\\s+(reads|bases)\\b", rest, flags=re.I
+            r"([0-9][0-9,]*)\s+(reads|bases)\b", rest, flags=re.I
         )
         if not counts:
             continue
