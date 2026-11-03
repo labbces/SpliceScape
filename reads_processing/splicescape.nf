@@ -1,3 +1,4 @@
+import SampleStatusReporter
 #!/usr/bin/env nextflow
 nextflow.enable.dsl = 2
 
@@ -22,6 +23,15 @@ include { CREATE_DB                  } from './modules.nf'
 include { POPULATE_DB                } from './modules.nf'
 include { FINALIZE_SAMPLE             } from './modules.nf'
 
+
+// Run-level status tracking is observational: it never releases admission permits.
+// Every manifest entry is written immediately, and updates are persisted atomically.
+def sampleStatusReporter = new SampleStatusReporter(
+    params.reads_file.toString(), params.outdir.toString()
+)
+workflow.onComplete {
+    sampleStatusReporter.completeReport()
+}
 
 workflow {
     main: 
@@ -72,6 +82,7 @@ workflow {
             .filter { line -> !line.isEmpty() }
             .map { sample ->
                 admissionSlots.acquire()
+                sampleStatusReporter.admitted(sample)
                 log.info "Admitted sample: ${sample}"
                 sample
             }
@@ -143,6 +154,8 @@ workflow {
             }
 
         early_failures.subscribe { sample, stage, status, exitCode ->
+            sampleStatusReporter.stageFailed(sample, stage, exitCode)
+            sampleStatusReporter.failed(sample)
             log.warn "SAMPLE_STAGE_FAILED sample=${sample} stage=${stage} exit=${exitCode}"
             log.warn "SAMPLE_TERMINAL sample=${sample} status=FAILED stage=${stage}"
             admissionSlots.release()
@@ -167,6 +180,7 @@ workflow {
                 error "Malformed SGSeq status for ${sample}: ${statusFile}"
             }
             if (fields[2] == 'FAILED') {
+                sampleStatusReporter.stageFailed(sample, "SGSEQ", fields[3])
                 log.warn "SAMPLE_STAGE_FAILED sample=${sample} stage=SGSEQ exit=${fields[3]}"
             } else if (fields[2] != 'SUCCESS') {
                 error "Unknown SGSeq status: ${fields[2]}"
@@ -198,6 +212,7 @@ workflow {
                     error "Malformed MAJIQ SJ status for ${sample}: ${statusFile}"
                 }
                 if (fields[2] == 'FAILED') {
+                    sampleStatusReporter.stageFailed(sample, "MAJIQ_SJ", fields[3])
                     log.warn "SAMPLE_STAGE_FAILED sample=${sample} stage=MAJIQ_SJ exit=${fields[3]}"
                     tuple(sample, 'FAILED', 'MAJIQ_SJ')
                 } else if (fields[2] == 'SUCCESS') {
@@ -270,6 +285,7 @@ workflow {
         )
         branch_terminal.subscribe { sample, sgseqStatus, majiqStatus, majiqStage ->
             if (sgseqStatus == 'FAILED' || majiqStatus == 'FAILED') {
+                sampleStatusReporter.failed(sample)
                 log.warn "SAMPLE_TERMINAL sample=${sample} status=FAILED sgseq=${sgseqStatus} majiq=${majiqStatus} stage=${majiqStage}"
                 // Release only after BOTH analysis branches have ended.
                 // No DB import is attempted for unsuccessful samples.
@@ -314,6 +330,7 @@ workflow {
             params.species
         )
         FINALIZE_SAMPLE.out.completed.subscribe { sample, marker ->
+            sampleStatusReporter.succeeded(sample)
             log.info "Completed sample: ${sample}; admitting next sample"
             admissionSlots.release()
         }
