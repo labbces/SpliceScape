@@ -344,13 +344,13 @@ workflow {
                         if (fields.size() != 4) {
                             error "Malformed batch import status: ${line}"
                         }
-                        tuple(fields[0], fields[1], fields[3], batchOk)
+                        tuple(fields[0], fields[1], fields[2], fields[3], batchOk)
                     }
             }
 
-        import_outcomes.subscribe { sample, status, reason, batchOk ->
+        import_outcomes.subscribe { sample, status, stage, reason, batchOk ->
             if (status == 'FAILED') {
-                sampleStatusReporter.stageFailed(sample, 'POPULATE_DB', reason)
+                sampleStatusReporter.stageFailed(sample, 'POPULATE_DB_'+stage, reason)
                 sampleStatusReporter.failed(sample)
                 log.warn "SAMPLE_IMPORT_FAILED sample=${sample} reason=${reason}"
             } else if (status != 'SUCCESS') {
@@ -359,8 +359,8 @@ workflow {
         }
 
         imported_ok = import_outcomes
-            .filter { sample, status, reason, batchOk -> status == 'SUCCESS' }
-            .map { sample, status, reason, batchOk ->
+            .filter { sample, status, stage, reason, batchOk -> status == 'SUCCESS' }
+            .map { sample, status, stage, reason, batchOk ->
                 tuple(sample, batchOk)
             }
 
