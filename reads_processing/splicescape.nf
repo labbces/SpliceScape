@@ -1,5 +1,5 @@
-import SampleStatusReporter
 #!/usr/bin/env nextflow
+import SampleStatusReporter
 nextflow.enable.dsl = 2
 
 // version 1.5.0
