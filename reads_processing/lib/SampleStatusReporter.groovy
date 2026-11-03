@@ -41,7 +41,7 @@ class SampleStatusReporter {
     }
 
     private static String clean(Object value) {
-        return (value == null ? '' : value.toString()).replaceAll(/[\\t\\r\\n]+/, ' ')
+        return (value == null ? '' : value.toString()).replaceAll(/[\t\r\n]+/, ' ')
     }
 
     private Map requireSample(String sample) {
@@ -105,15 +105,15 @@ class SampleStatusReporter {
     }
 
     private void persist() {
-        def lines = ['sample_id\\tstatus\\tfailed_stage\\texit_code\\treason']
+        def lines = ['sample_id\tstatus\tfailed_stage\texit_code\treason']
         samples.each { sample, row ->
             lines << [sample, row.status, row.failedStage, row.exitCode, row.reason]
-                .collect { clean(it) }.join('\\t')
+                .collect { clean(it) }.join('\t')
         }
         def parent = reportFile.toPath().parent
         def tmp = Files.createTempFile(parent, '.sample_status.', '.tmp')
         try {
-            Files.write(tmp, (lines.join('\\n') + '\\n').getBytes('UTF-8'))
+            Files.write(tmp, (lines.join('\n') + '\n').getBytes('UTF-8'))
             try {
                 Files.move(tmp, reportFile.toPath(),
                     StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
