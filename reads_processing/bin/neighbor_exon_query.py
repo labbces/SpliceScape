@@ -9,7 +9,21 @@ The fallback calls the exact legacy routine when there are no repetitions or
 the input has null coordinate keys. No reference, distance, tie-breaking, or
 strand semantics are changed.
 """
+import os
+import time
 import pandas as pd
+
+
+def _report_query_counts(original_rows, queried_rows, elapsed_s):
+    if os.environ.get('SPLICESCAPE_IMPORT_PROFILE') == '1':
+        import import_profiler
+        import_profiler.emit(
+            'exon_query_deduplication', input_rows=original_rows,
+            unique_queries=queried_rows,
+            reused_queries=original_rows - queried_rows,
+            elapsed_s=round(elapsed_s, 6),
+        )
+
 
 FLANK_COLUMNS = ["up_s", "up_e", "down_s", "down_e"]
 
@@ -30,6 +44,7 @@ def unique_exon_queries(df, legacy_closest, seq_column):
     if any(key in df.columns for key in FLANK_COLUMNS):
         return legacy_closest(df)
 
+    begin = time.perf_counter()
     unique = df.drop_duplicates(subset=keys, keep="first")
     if len(unique) == len(df):
         return legacy_closest(df)
@@ -47,4 +62,5 @@ def unique_exon_queries(df, legacy_closest, seq_column):
     result = df.merge(coords, on=keys, how="left", sort=False, validate="many_to_one")
     if len(result) != len(df):
         raise AssertionError("Exon coordinate expansion changed row count")
+    _report_query_counts(len(df), len(unique), time.perf_counter() - begin)
     return result
