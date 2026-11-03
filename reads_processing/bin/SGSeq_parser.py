@@ -290,6 +290,16 @@ def _reference_exons_cached(ref_exons_path):
 
 
 def calculate_neighboring_exon_coordinates(df_new, ref_exons_path):
+    """Avoid repeated bedtools closest queries for identical genomic intervals."""
+    from neighbor_exon_query import unique_exon_queries
+    return unique_exon_queries(
+        df_new,
+        lambda unique: _calculate_neighboring_exon_coordinates_original(unique, ref_exons_path),
+        "seqID",
+    )
+
+
+def _calculate_neighboring_exon_coordinates_original(df_new, ref_exons_path):
     """
     Maps splice junctions to their closest flanking exons in the reference.
     
