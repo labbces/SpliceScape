@@ -225,31 +225,10 @@ def _ensure_reference_bed(gff_path):
     return BedTool(bed_path)
 
 def _deduplicate_majiq_junctions(df):
-    if df.empty:
-        return df
+    """Vectorized equivalent of the original per-junction weighted PSI aggregation."""
+    from junction_aggregation import deduplicate_majiq_junctions
+    return deduplicate_majiq_junctions(df)
 
-    # 1. We remove junctionID from this list to avoid duplicate in join/reset_index
-    df_clean = df[['junctionID', 'geneID', 'PSI', 'reads']].copy()
-
-    # 3. Aggregates metrics
-    reads_agg = df_clean.groupby('junctionID')['reads'].max()
-
-    def weight_psi(group):
-        w = group['reads']
-        if w.sum() == 0:
-            return group['PSI'].mean()
-        return (group['PSI'] * w).sum() / w.sum()
-
-    psi_agg = df_clean.groupby('junctionID').apply(weight_psi).rename('PSI')
-    
-    # 4. Aggregation of Stable Metadata (geneID)
-    # We take the first geneID just so we don't lose the reference in the orchestrator
-    gene_agg = df_clean.groupby('junctionID')['geneID'].first()
-
-    # 5. Reconstruction of Single DataFrame
-    df_final = pd.concat([gene_agg, psi_agg, reads_agg], axis=1).reset_index()
-
-    return df_final
 
 def _get_table_columns(db_conn, table):
     """
