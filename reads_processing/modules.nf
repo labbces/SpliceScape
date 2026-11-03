@@ -575,6 +575,7 @@ process POPULATE_DB{
     tuple val(sra_accession),
           path("db_majiq_${sra_accession}.ok"),
           path("db_sgseq_${sra_accession}.ok"), emit: populate_ok
+    path("import_profile_${sra_accession}_*.jsonl"), emit: import_profile
 
     script:
     // Select the Python interpreter explicitly from the JSON Conda environment.
@@ -584,18 +585,31 @@ process POPULATE_DB{
     """
     test -x '${pythonExe}' || { echo 'Python interpreter not executable: ${pythonExe}' >&2; exit 1; }
     set -euo pipefail
+    export SPLICESCAPE_IMPORT_PROFILE=1
+    export SPLICESCAPE_IMPORT_PROFILE_FILE=import_profile_${sra_accession}_majiq.jsonl
+    echo 'IMPORT_PROFILE_START tool=MAJIQ sample=${sra_accession}'
+    start_majiq=\$(date +%s)
 
     '${pythonExe}' '${projectDir}/bin/majiq_Parser.py' --results_dir ${path_to_results_majiq} --db "${db}" --ref_exons ${genomeGFF_file} --genome_version ${species_code} --species "${species_name}" --sra_id ${sra_accession}
+    echo "IMPORT_PROFILE_END tool=MAJIQ sample=${sra_accession} duration_s=\$((\$(date +%s)-start_majiq))"
     touch db_majiq_${sra_accession}.ok
 
+    export SPLICESCAPE_IMPORT_PROFILE_FILE=import_profile_${sra_accession}_sgseq.jsonl
+    echo 'IMPORT_PROFILE_START tool=SGSEQ sample=${sra_accession}'
+    start_sgseq=\$(date +%s)
+
     '${pythonExe}' '${projectDir}/bin/SGSeq_parser.py' --results_dir ${path_to_results_sgseq} --db "${db}" --ref_exons ${genomeGFF_file} --genome_version ${species_code} --species "${species_name}" --sra_id ${sra_accession}
+    echo "IMPORT_PROFILE_END tool=SGSEQ sample=${sra_accession} duration_s=\$((\$(date +%s)-start_sgseq))"
     # Import QC only after both analysis parsers succeeded.
+    echo 'IMPORT_PROFILE_START tool=QC sample=${sra_accession}'
+    start_qc=\$(date +%s)
     '${pythonExe}' '${projectDir}/bin/import_sample_qc.py' \\
         --db "${db}" \\
         --sra-id '${sra_accession}' \\
         --genome-version '${species_code}' \\
         --bbduk-log "${params.outdir}/reads/inspect/bbduk/${sra_accession}.bbduk.log" \\
         --star-log "${params.outdir}/mapping/inspect/${sra_accession}/${species_code}_${sra_accession}_Log.final.out"
+    echo "IMPORT_PROFILE_END tool=QC sample=${sra_accession} duration_s=\$((\$(date +%s)-start_qc))"
     touch db_sgseq_${sra_accession}.ok
     """
 }
