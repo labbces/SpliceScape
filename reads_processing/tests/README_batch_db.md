@@ -205,6 +205,63 @@ filesystem**, same input TSVs, and a fresh database. These are end-to-end
 tests; the synthetic equivalence tests do not constitute a real-data speedup
 measurement.
 
+## Multi-sample validation (development only)
+
+This extends the successful one-sample reference comparison. The multi-sample
+tests are independent of the biological PSI vectorization and do not change
+the SQLite schema or parser calculations.
+
+Run three test suites in the SpliceScape Conda environment:
+
+```bash
+python3 reads_processing/tests/test_batch_import.py
+python3 reads_processing/tests/test_multisample_db.py
+python3 reads_processing/tests/test_multisample_sql.py
+```
+
+- `test_batch_import.py`: prior single-success/single-failure mock importer
+  regression.
+- `test_multisample_db.py`: two successfully imported samples sharing one
+  junction, sample-specific junctions, a failed sample that commits a partial
+  write before failing, rollback, and successful continuation. Also checks that
+  a corrupted summary is detected.
+- `test_multisample_sql.py`: invokes the actual MAJIQ and SGSeq
+  `bulk_update` SQL functions on a two-sample SQLite fixture and checks means,
+  read totals, and non-overlapping events.
+
+**On a real multi-sample batch** (after the importer completes successfully),
+run the read-only database validator:
+
+```bash
+python3 reads_processing/bin/validate_batch_database.py \
+  --db /absolute/path/to/new_multisample.sqlite \
+  --status /absolute/path/to/batch_import_status.tsv \
+  --genome-version Athaliana_447
+```
+
+It checks imported sample IDs against the batch status report, no rows for
+failed-import samples, QC presence for both BBDUK and STAR, orphaned sample
+statistics, and aggregate PSI/read summaries recomputed independently from
+`junction_sample_stats`. It compares numeric values with `1e-9` tolerance.
+Expected result: `RESULT: PASS (cross-sample consistency checks)`.
+
+This checker verifies **internal consistency**, not agreement with an external
+truth set. A genuine multi-sample workflow test on SGE remains necessary.
+
+For that first SGE test, use a **fresh output directory**, a **new DB filename**,
+and a manifest of two or three known-good accessions. Do not use the
+previously validated one-sample database as the candidate DB; keep it as a
+reference. Check that `sample_status.txt` contains exactly the accession
+set in the manifest. Then introduce one intentionally failing accession and
+confirm that the healthy samples still reach the batch writer.
+
+**Known blocker:** the current blocking admission semaphore and lack of
+terminal status wrappers around intermediate MAJIQ stages mean that some
+analysis failures can stop the workflow or prevent the batch barrier from
+closing. The synthetic database tests do not prove that these Nextflow failure
+paths are safe. Do not treat v2.2 as production-ready until those paths
+are addressed and tested.
+
 ## Known v2.2 limitations
 
 - The existing blocking semaphore is still used for admission. That
