@@ -114,6 +114,58 @@ preserves the existing row-by-row parser structure. It reduces scheduler
 overhead and avoids active SQLite on shared NFS, but checkpointing the whole
 local database once per sample can become expensive for large datasets.
 
+
+## Faster isolated comparison without re-running RNA-seq analyses
+
+If the old run has already retained both MAJIQ Modulizer and SGSeq TSV
+directories, you can exercise **only the new batch importer**. Do this in an
+SGE interactive allocation or an SGE job that has node-local scratch, not
+on the login node with shared scratch.
+
+Set the existing results directory, genome GFF and the location for a **new**
+candidate DB (do not point it at the reference DB):
+
+```bash
+OLD_RESULTS=/Storage/data1/riano/Sugarcane/IntronsSpliceScape/isolated_test_results
+SAMPLE=SRR17687198
+GFF=/absolute/path/to/Athaliana_447_Araport11.gene_exons.gff3
+NEW_DB=/absolute/path/to/test_output/splicescape_v22.sqlite
+
+# Activate the existing SpliceScape Conda environment first.
+mkdir -p /absolute/path/to/test_output
+printf '%s\t%s\t%s\n' \
+  "$SAMPLE" \
+  "$OLD_RESULTS/majiq/results/${SAMPLE}_majiq" \
+  "$OLD_RESULTS/SGSeq/results/${SAMPLE}_sgseq" > batch_manifest.tsv
+
+# Check that BOTH source directories and reference/inspection logs exist.
+test -d "$OLD_RESULTS/majiq/results/${SAMPLE}_majiq"
+test -d "$OLD_RESULTS/SGSeq/results/${SAMPLE}_sgseq"
+test -f "$OLD_RESULTS/reads/inspect/bbduk/${SAMPLE}.bbduk.log"
+test -f "$OLD_RESULTS/mapping/inspect/${SAMPLE}/Athaliana_447_${SAMPLE}_Log.final.out"
+
+# TMPDIR must be located on the allocated compute node's local filesystem.
+test -n "${TMPDIR:-}" && test -d "$TMPDIR"
+python3 reads_processing/bin/import_batch.py \
+  --manifest batch_manifest.tsv \
+  --ref-exons "$GFF" \
+  --genome-version Athaliana_447 \
+  --species "Arabidopsis thaliana" \
+  --outdir "$OLD_RESULTS" \
+  --scratch-dir "$TMPDIR" \
+  --destination "$NEW_DB" \
+  --status batch_import_status.tsv
+```
+
+The input directories above are expected locations, not paths verified on
+your cluster. Confirm them before running. The importer creates the database
+on `TMPDIR` and copies the completed file to `NEW_DB`. The reference
+database is never opened for writing.
+
+Then run the comparator described above using `NEW_DB` as `--candidate`.
+This is the most direct scientific regression test because it reuses identical
+MAJIQ and SGSeq input results.
+
 ## Known v2.2 limitations
 
 - The existing blocking semaphore is still used for admission. That
