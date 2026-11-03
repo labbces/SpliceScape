@@ -363,37 +363,7 @@ def craft_biological_event_id(df, genome_version):
                             "_" + df['strand'] + "_" + df['event_type'])
     return df
 
-def _get_sorted_reference_exons(ref_exons_path):
-    """Return the same exon reference used by legacy closest calls, cached per process.
-
-    Does not change exon filtering, sorting, closest tie-breaking or junction
-    coordinates. The reference is assumed immutable during one parser run.
-    """
-    import functools
-    return _reference_exons_cached(os.path.abspath(ref_exons_path))
-
-
-from functools import lru_cache
-
-
-@lru_cache(maxsize=4)
-def _reference_exons_cached(ref_exons_path):
-    if ref_exons_path.endswith(('.gff', '.gff3')):
-        return _ensure_reference_bed(ref_exons_path)
-    return BedTool(ref_exons_path).sort()
-
-
 def calculate_neighboring_exon_coordinates(df_new, ref_exons_path):
-    """Avoid repeated bedtools closest queries for identical genomic intervals."""
-    from neighbor_exon_query import unique_exon_queries
-    return unique_exon_queries(
-        df_new,
-        lambda unique: _calculate_neighboring_exon_coordinates_original(unique, ref_exons_path),
-        "seqid",
-    )
-
-
-def _calculate_neighboring_exon_coordinates_original(df_new, ref_exons_path):
     """
     Maps splice junctions to their closest flanking exons in the reference.
     
@@ -426,10 +396,11 @@ def _calculate_neighboring_exon_coordinates_original(df_new, ref_exons_path):
         [['seqid', '_end_start', 'end', '_tmp_id', '_score', 'strand']]
     ).sort()
 
-    # The exon reference is invariant across event types within a sample.
-    # Sorting a full reference BED for every event type is redundant.
-    # A per-process cache avoids changing bedtools closest parameters.
-    exons_ref = _get_sorted_reference_exons(ref_exons_path)
+    # Prepers reference ordered coords - accepts both GFF3 and BED
+    if ref_exons_path.endswith(('.gff', '.gff3')):
+        exons_ref = _ensure_reference_bed(ref_exons_path)
+    else:
+        exons_ref = BedTool(ref_exons_path).sort()
 
     # 1. Upstream Search
     up_match = junc_starts.closest(exons_ref, s=True, D="ref", t="first").to_dataframe(
