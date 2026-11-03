@@ -1,4 +1,5 @@
-#!/usr/bin/env python3\n"""Regression tests for BBDuk counts and STAR percentage units."""
+#!/usr/bin/env python3
+"""Regression tests for BBDuk counts and STAR percentage units."""
 import importlib.util
 import tempfile
 import unittest
