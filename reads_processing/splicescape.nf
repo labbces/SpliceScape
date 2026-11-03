@@ -20,9 +20,14 @@ include { MAJIQ_PSI                  } from './modules.nf'
 include { MAJIQ_SG_COVERAGE          } from './modules.nf'
 include { MAJIQ_VOILA_MODULIZE       } from './modules.nf'
 include { CREATE_DB                  } from './modules.nf'
-include { POPULATE_DB                } from './modules.nf'
+include { POPULATE_DB_BATCH          } from './modules.nf'
 include { FINALIZE_SAMPLE             } from './modules.nf'
 
+
+// Keep the user's reference SQLite file untouched; v2.2 requires a new output file.
+if (new File(params.db.toString()).exists()) {
+    error "Refusing to overwrite existing SQLite database: ${params.db}. Set db to a new file for v2.2 comparison."
+}
 
 // Run-level status tracking is observational: it never releases admission permits.
 // Every manifest entry is written immediately, and updates are persisted atomically.
@@ -259,11 +264,6 @@ workflow {
             params.majiq_cores
         )
 
-        CREATE_DB (
-            params.species,
-            params.species_name,
-            params.db)
-
         // A branch's terminal outcome is independent of whether a tool
         // produced an importable directory. For now, MAJIQ failures at SJ
         // and successful Modulize are handled explicitly; intermediate MAJIQ
@@ -291,6 +291,8 @@ workflow {
                 // No DB import is attempted for unsuccessful samples.
                 admissionSlots.release()
             } else {
+                sampleStatusReporter.analysisComplete(sample)
+                admissionSlots.release()
                 log.info "SAMPLE_ANALYSIS_COMPLETE sample=${sample} status=SUCCESS"
             }
         }
@@ -314,25 +316,62 @@ workflow {
             failOnMismatch: false
         )
 
-        POPULATE_DB (
-            paired_results,
-            CREATE_DB.out.db_out.first(),
+        // Batch barrier: this channel completes after all paired analyses have
+        // produced their result directories. It emits exactly ONE list for
+        // POPULATE_DB_BATCH (even if all samples failed analysis).
+        paired_batch = paired_results
+            .map { sample, majiqDir, sgseqDir ->
+                tuple(sample, majiqDir, sgseqDir)
+            }
+            .collect()
+
+        POPULATE_DB_BATCH (
+            paired_batch,
             params.genomeGFF,
             params.species,
             params.species_name
         )
 
-        // A slot is returned only after both branches, database import and
-        // optional BAM cleanup are complete. All sample IDs stay paired.
+        // Each import outcome is reported independently. Only successfully
+        // imported samples proceed to BAM cleanup and final SUCCESS status.
+        import_outcomes = POPULATE_DB_BATCH.out.batch_result
+            .flatMap { dbFile, statusFile, batchOk ->
+                statusFile.text.readLines()
+                    .drop(1)
+                    .findAll { it.trim() }
+                    .collect { line ->
+                        def fields = line.split('\\t', -1)
+                        if (fields.size() != 4) {
+                            error "Malformed batch import status: ${line}"
+                        }
+                        tuple(fields[0], fields[1], fields[3], batchOk)
+                    }
+            }
+
+        import_outcomes.subscribe { sample, status, reason, batchOk ->
+            if (status == 'FAILED') {
+                sampleStatusReporter.stageFailed(sample, 'POPULATE_DB', reason)
+                sampleStatusReporter.failed(sample)
+                log.warn "SAMPLE_IMPORT_FAILED sample=${sample} reason=${reason}"
+            } else if (status != 'SUCCESS') {
+                error "Unknown batch import status for ${sample}: ${status}"
+            }
+        }
+
+        imported_ok = import_outcomes
+            .filter { sample, status, reason, batchOk -> status == 'SUCCESS' }
+            .map { sample, status, reason, batchOk ->
+                tuple(sample, batchOk, batchOk)
+            }
+
         FINALIZE_SAMPLE(
-            POPULATE_DB.out.populate_ok,
+            imported_ok,
             params.outdir,
             params.species
         )
         FINALIZE_SAMPLE.out.completed.subscribe { sample, marker ->
             sampleStatusReporter.succeeded(sample)
-            log.info "Completed sample: ${sample}; admitting next sample"
-            admissionSlots.release()
+            log.info "Completed sample: ${sample}"
         }
 
 }
