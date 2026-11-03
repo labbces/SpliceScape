@@ -623,7 +623,7 @@ process FINALIZE_SAMPLE {
     errorStrategy 'terminate'
 
     input:
-    tuple val(sra_accession), path(majiq_db_ok), path(sgseq_db_ok)
+    tuple val(sra_accession), path(batch_db_ok)
     val outdir
     val species_name
 
@@ -637,8 +637,7 @@ process FINALIZE_SAMPLE {
     """ : "true"
     """
     set -e
-    test -f "${majiq_db_ok}"
-    test -f "${sgseq_db_ok}"
+    test -f "${batch_db_ok}"
     ${cleanup}
     touch finished_${sra_accession}.ok
     """
