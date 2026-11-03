@@ -15,12 +15,12 @@ Columns:
 | Column | Meaning |
 |---|---|
 | `sample_id` | Accession from the input manifest |
-| `status` | `PENDING`, `RUNNING`, `SUCCESS`, `FAILED`, or `INCOMPLETE` |
+| `status` | `PENDING`, `RUNNING`, `ANALYSIS_COMPLETE`, `SUCCESS`, `FAILED`, or `INCOMPLETE` |
 | `failed_stage` | One or more stages reporting failures (semicolon-separated) |
 | `exit_code` | Corresponding exit codes (semicolon-separated) |
 | `reason` | Failed stage(s) and exit codes, or why terminal status was unavailable |
 
-A sample is marked `SUCCESS` **only after** `FINALIZE_SAMPLE` produces
+`ANALYSIS_COMPLETE` means SGSeq and MAJIQ completed but the end-of-run database import is still pending.\n\nA sample is marked `SUCCESS` **only after** `FINALIZE_SAMPLE` produces
 its completion marker. On supported failures at WGET, BBDuk, or STAR,
 the entry becomes `FAILED` immediately; SGSeq and MAJIQ_SJ failures are
 collected until both analysis branches have completed before marking the
