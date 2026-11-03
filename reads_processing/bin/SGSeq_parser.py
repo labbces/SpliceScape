@@ -127,39 +127,11 @@ def _ensure_reference_bed(gff_path):
     return BedTool(bed_path)
 
 def _deduplicate_sgseq_junctions(df):
-    if df.empty:
-        return df
+    """Vectorized equivalent of the original per-junction weighted PSI aggregation."""
+    from junction_aggregation import deduplicate_sgseq_junctions
+    return deduplicate_sgseq_junctions(df)
 
-    if df.empty:
-        return df
 
-    # 1. We remove junctionID from this list to avoid duplicate in join/reset_index
-    df_clean = df[['junctionID', 'geneID', 'PSI', 'reads_sgseq_3p', 'reads_sgseq_5p']].copy()
-
-    # 3. Aggregates metrics
-    reads3_agg = df_clean.groupby('junctionID')['reads_sgseq_3p'].max()
-    reads5_agg = df_clean.groupby('junctionID')['reads_sgseq_5p'].max()
-
-    def weight_psi(group):
-        w = group[['reads_sgseq_3p', 'reads_sgseq_5p']].max(axis=1).fillna(0)
-    
-        if w.sum() == 0:
-            return group['PSI'].mean()
-        
-        return (group['PSI'] * w).sum() / w.sum()
-
-    psi_agg = df_clean.groupby('junctionID').apply(weight_psi).rename('PSI')
-    
-    # 4. Aggregation of Stable Metadata (geneID)
-    # We take the first geneID just so we don't lose the reference in the orchestrator
-    gene_agg = df_clean.groupby('junctionID')['geneID'].first()
-
-    # 5. Reconstruction of Single DataFrame
-    df_final = pd.concat([gene_agg, psi_agg, reads3_agg, reads5_agg], axis=1).reset_index()
-
-    return df_final
-
-# ─── Processes ─────────────────────────────────────────
 def load_sgseq_file(file_path, event_type):
     """
     Loads and normalizes TSV files from SGSeq.
