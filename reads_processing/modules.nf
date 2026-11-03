@@ -664,6 +664,7 @@ process POPULATE_DB_BATCH {
     tuple path("${new File(params.db.toString()).name}"),
           path("batch_import_status.tsv"),
           path("batch_db.ok"), emit: batch_result
+    path("import_profile_*.jsonl"), optional: true, emit: import_profile
 
     script:
     def condaEnv = params.environment?.conda_env
