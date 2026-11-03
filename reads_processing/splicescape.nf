@@ -361,7 +361,7 @@ workflow {
         imported_ok = import_outcomes
             .filter { sample, status, reason, batchOk -> status == 'SUCCESS' }
             .map { sample, status, reason, batchOk ->
-                tuple(sample, batchOk, batchOk)
+                tuple(sample, batchOk)
             }
 
         FINALIZE_SAMPLE(
