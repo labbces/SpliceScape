@@ -751,6 +751,30 @@ def main():
 
     args = parser.parse_args()
 
+    # Optional v2.2 profiling; leave data and SQL semantics unchanged.
+    profiler = None
+    if os.environ.get("SPLICESCAPE_IMPORT_PROFILE") == "1":
+        import import_profiler as profiler
+        profiler.configure(
+            os.environ.get("SPLICESCAPE_IMPORT_PROFILE_FILE", "import_profile.jsonl"),
+            args.sra_id, "SGSEQ"
+        )
+        profiler.profile_functions(globals(), [
+            "load_sgseq_file",
+            "formatting_input_data",
+            "filter_events_by_db_status",
+            "calculate_neighboring_exon_coordinates",
+            "prepare_df_for_insertion",
+            "insert_new_events_into_db",
+            "alternative_parser",
+            "update_or_insert_junction_sample_stats_sgseq",
+            "bulk_update",
+            "update_nalt_obsolescence",
+            "_deduplicate_sgseq_junctions",
+            "_query_in_batches",
+        ])
+
+
     # Check existence of critical files
     for f in [args.results_dir, args.ref_exons]:
         if not os.path.exists(f):
@@ -762,6 +786,8 @@ def main():
     conn = None
     try:
         conn = sqlite3.connect(args.db)
+        if profiler:
+            profiler.database_snapshot(conn, args.db, "database_before")
 
         if not args.force:
             if _check_redundancy(conn, args.sra_id, args.genome_version):
@@ -794,6 +820,13 @@ def main():
         traceback.print_exc() 
         # Optional: traceback.print_exc() for rigorous debugging
     finally:
+        if conn and profiler:
+            try:
+                profiler.database_snapshot(conn, args.db, "database_after")
+            except Exception:
+                logging.exception("Failed to capture final SQLite profile snapshot")
+        if profiler:
+            profiler.finish()
         if conn:
             conn.close()
             logging.info("Database connection closed.")
