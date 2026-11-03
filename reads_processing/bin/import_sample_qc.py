@@ -35,7 +35,7 @@ def parse_star(path):
         key = re.sub(r"[^a-z0-9]+", "_", label.lower()).strip("_")
         number, unit = numeric(raw)
         if number is not None:
-            metrics[key] = (number, None)
+            metrics[key] = (number, unit)
     return metrics
 
 
@@ -49,15 +49,19 @@ def parse_bbduk(path):
         if not match:
             continue
         category, rest = match.groups()
-        numbers = re.findall(r"([\d,]+)\s*(reads|bases)?", rest, flags=re.I)
-        if not numbers:
+        # BBDuk often separates counts with percentages, for example:
+        # Input: 20004324 reads 3000648600 bases
+        # Result: 19602676 reads (97.99%) 2930000000 bases (97.65%)
+        # Extract only values explicitly followed by 'reads' or 'bases'.
+        counts = re.findall(
+            r"([0-9][0-9,]*)\\s+(reads|bases)\\b", rest, flags=re.I
+        )
+        if not counts:
             continue
-        # Standard BBDuk lines have read count and base count in that order.
-        nums = [int(x.replace(",", "")) for x, _ in numbers]
         name = category.lower()
-        metrics[f"{name}_reads"] = (float(nums[0]), None)
-        if len(nums) >= 2:
-            metrics[f"{name}_bases"] = (float(nums[1]), None)
+        for raw_count, unit in counts:
+            metric = f"{name}_{unit.lower()}"
+            metrics[metric] = (float(raw_count.replace(",", "")), None)
     return metrics
 
 
