@@ -57,7 +57,32 @@ def validate(database, status_file, genome_version, atol=1e-9, rtol=1e-9):
                 "SELECT DISTINCT sra_id FROM sample_qc_metrics WHERE genome_version = ?",
                 (genome_version,))
         }
-        unexpected = (samples_with_stats | samples_with_qc) - successful
+        # The batch-status TSV describes only this run. In incremental
+        # databases, prior successful samples are also expected to be present.
+        registry_exists = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='sample_processing_status'"
+        ).fetchone()
+        if registry_exists:
+            registry = {row[0]: row[1] for row in conn.execute(
+                """SELECT sample_id, status FROM sample_processing_status
+                   WHERE genome_version=?""", (genome_version,))}
+            prior_successful = {sample for sample, state in registry.items()
+                                if state == "SUCCESS"}
+            for sample in successful:
+                if registry.get(sample) != "SUCCESS":
+                    issues.append(f"{sample}: batch SUCCESS absent from persistent registry")
+            for sample in failed:
+                if registry.get(sample) != "FAILED":
+                    issues.append(f"{sample}: batch FAILED absent from persistent registry")
+            invalid_failed = {sample for sample, state in registry.items()
+                              if state == "FAILED" and
+                              (sample in samples_with_stats or sample in samples_with_qc)}
+            if invalid_failed:
+                issues.append(f"previously failed samples have biological data: {sorted(invalid_failed)}")
+        else:
+            prior_successful = set()
+
+        unexpected = (samples_with_stats | samples_with_qc) - (successful | prior_successful)
         if unexpected:
             issues.append(f"unexpected samples in database: {sorted(unexpected)}")
         missing_qc = successful - samples_with_qc
