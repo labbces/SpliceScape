@@ -715,27 +715,53 @@ process POPULATE_DB{
 // Last stage of a sample lifecycle. Runs after both analyses and DB import.
 // Intermediate BAM removal is deliberately delayed until both branches end.
 process FINALIZE_SAMPLE {
-    tag "${sra_accession}"
+    tag "batch"
     errorStrategy 'terminate'
+    maxForks 1
 
     input:
-    tuple val(sra_accession), path(batch_db_ok)
+    tuple path(imported_db), path(batch_import_status), path(batch_db_ok)
+    val terminal_events
+    val eligible_manifest
     val outdir
     val species_name
 
     output:
-    tuple val(sra_accession), path("finished_${sra_accession}.ok"), emit: completed
+    path("finalized_samples.tsv"), emit: completed
 
     script:
-    def bam = "${outdir}/mapping/inspect/${sra_accession}/${species_name}_${sra_accession}_Aligned.sortedByCoord.out.bam"
-    def cleanup = params.rm_mapping_inspect_bamfiles ? """
-        rm -f "${bam}" "${bam}.bai"
-    """ : "true"
+    def condaEnv = params.environment?.conda_env
+    if (!condaEnv) error "FINALIZE_SAMPLE requires environment.conda_env"
+    def pythonExe = new File(condaEnv.toString(), "bin/python").absolutePath
+    def scratchParam = params.local_db_scratch ?: ''
     """
-    set -e
+    set -euo pipefail
     test -f "${batch_db_ok}"
-    ${cleanup}
-    touch finished_${sra_accession}.ok
+    dbscratch="${scratchParam}"
+    if [ -z "\$dbscratch" ]; then dbscratch="\${TMPDIR:-}"; fi
+    if [ -z "\$dbscratch" ]; then
+        echo "Node-local TMPDIR or local_db_scratch required" >&2
+        exit 2
+    fi
+    test -d "\$dbscratch" && test -w "\$dbscratch"
+    fstype=\$(stat -f -c %T "\$dbscratch")
+    case "\$fstype" in
+        nfs|nfs4|cifs|smb2|lustre|gpfs)
+            echo "Refusing SQLite writes on shared filesystem: \$dbscratch (\$fstype)" >&2
+            exit 2 ;;
+    esac
+    "${pythonExe}" "${projectDir}/bin/finalize_samples.py" \
+      --input-db "${imported_db}" \
+      --destination "${params.db}" \
+      --status-report "${outdir}/sample_status.txt" \
+      --import-status "${batch_import_status}" \
+      --eligible-manifest "${eligible_manifest}" \
+      --genome-version "${params.species}" \
+      --outdir "${outdir}" \
+      --species "${species_name}" \
+      --scratch-dir "\$dbscratch" \
+      ${params.rm_mapping_inspect_bamfiles ? "--cleanup-bams" : ""} \
+      --completed finalized_samples.tsv
     """
 }
 
@@ -745,8 +771,6 @@ process POPULATE_DB_BATCH {
     tag "batch"
     errorStrategy 'terminate'
     maxForks 1
-    publishDir "${new File(params.db.toString()).absoluteFile.parent}", mode: 'copy',
-               pattern: "${new File(params.db.toString()).name}", overwrite: false
     publishDir "${params.outdir}/db", mode: 'copy', pattern: "batch_import_status.tsv"
     publishDir "${params.outdir}/db", mode: 'copy', pattern: "import_profile_*.jsonl"
 
@@ -804,6 +828,7 @@ SPLICESCAPE_MANIFEST_END
       --ref-exons '${genomeGFF_file}' \\
       --genome-version '${species_code}' \\
       --species '${species_name}' \\
+      --existing-db '${params.db}' \
       --outdir '${params.outdir}' \\
       --scratch-dir "\$dbscratch" \\
       --destination '${dbFileName}' \\
