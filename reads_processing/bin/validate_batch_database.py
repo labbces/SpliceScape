@@ -114,17 +114,32 @@ def validate(database, status_file, genome_version, atol=1e-9, rtol=1e-9):
                 issues.append(f"missing summary row: {expected['junctionID']}")
                 mismatches += 1
                 continue
-            # Legacy summary rows default to zero before a given tool has
-            # any observations; SQL AVG/SUM over all-NULL values yields NULL.
-            # Preserve those original default-zero semantics.
+            # An untouched summary row has default zero means. SQL
+            # bulk_update writes NULL means when all PSI values are NULL.
+            # Both cases are valid when COUNT(psi) is zero. Read totals are
+            # validated independently; do not coerce their NULL values.
             changed = []
             for name in METRICS:
                 expected_value = expected[name]
-                if expected_value is None and name.endswith("_majiq") and expected["n_of_samples_majiq"] == 0:
-                    expected_value = 0
-                if expected_value is None and name.endswith("_sgseq") and expected["n_of_samples_sgseq"] == 0:
-                    expected_value = 0
-                if not equivalent(expected_value, actual[name], atol, rtol):
+                # Mean PSI can be NULL after a real bulk_update if the
+                # relevant tool has no non-NULL PSI observations. A freshly
+                # initialized summary may instead retain its default 0.
+                # Both represent an absent mean, but ONLY when COUNT(psi)=0.
+                absent_mean = (
+                    name == "mean_psi_majiq"
+                    and expected["n_of_samples_majiq"] == 0
+                ) or (
+                    name == "mean_psi_sgseq"
+                    and expected["n_of_samples_sgseq"] == 0
+                )
+                if absent_mean:
+                    equal = (
+                        (expected_value is None and actual[name] is None)
+                        or (expected_value is None and actual[name] == 0)
+                    )
+                else:
+                    equal = equivalent(expected_value, actual[name], atol, rtol)
+                if not equal:
                     changed.append(name)
             if changed:
                 mismatches += 1
