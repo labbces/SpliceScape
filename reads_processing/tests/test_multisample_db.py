@@ -149,6 +149,35 @@ class TestMultiSample(unittest.TestCase):
                 conn.commit()
             self.assertEqual(validator.validate(db, status, "G"), 1)
 
+    def test_absent_read_totals_accept_default_zero_but_not_nonzero(self):
+        validator = load("validate_batch_database")
+        with tempfile.TemporaryDirectory() as folder:
+            db = Path(folder) / "missing_reads.sqlite"
+            status = Path(folder) / "batch.tsv"
+            make_database(db)
+            with sqlite3.connect(db) as conn:
+                insert_sample(conn, "S1", [("J1", .6, .4, 5)])
+                conn.execute(
+                    """UPDATE junction_sample_stats SET reads_majiq=NULL,
+                       reads_sgseq_3p=NULL WHERE junctionID='J1'"""
+                )
+                recalculate(conn)
+                # Untouched columns may contain defaults instead of
+                # bulk_update's SQL NULL.
+                conn.execute(
+                    """UPDATE junction_summary_stats SET sum_reads_majiq=0,
+                       sum_reads_sgseq_3p=0 WHERE junctionID='J1'"""
+                )
+                conn.commit()
+            write_status(status, [("S1", "SUCCESS")])
+            self.assertEqual(validator.validate(db, status, "G"), 0)
+            with sqlite3.connect(db) as conn:
+                conn.execute(
+                    "UPDATE junction_summary_stats SET sum_reads_majiq=10 WHERE junctionID='J1'"
+                )
+                conn.commit()
+            self.assertEqual(validator.validate(db, status, "G"), 1)
+
     def test_failed_sample_rolled_back_and_later_sample_imported(self):
         importer = load("import_batch")
         validator = load("validate_batch_database")
