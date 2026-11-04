@@ -116,6 +116,39 @@ class TestMultiSample(unittest.TestCase):
                 conn.commit()
             self.assertEqual(validator.validate(db, status, "G"), 1)
 
+    def test_missing_tool_psi_can_be_null_or_default_zero(self):
+        """A real bulk_update writes NULL for absent PSI; untouched rows keep 0."""
+        validator = load("validate_batch_database")
+        with tempfile.TemporaryDirectory() as folder:
+            db = Path(folder) / "missing_psi.sqlite"
+            status = Path(folder) / "batch.tsv"
+            make_database(db)
+            with sqlite3.connect(db) as conn:
+                insert_sample(conn, "S1", [
+                    ("J_MAJIQ_ONLY", .6, None, 5),
+                    ("J_NO_MAJIQ", None, .4, 3),
+                ])
+                recalculate(conn)
+                # SQL AVG over all-null PSI yields NULL in the actual parser;
+                # a default zero also occurs when the other parser never
+                # updated a newly created junction.
+                conn.execute(
+                    "UPDATE junction_summary_stats SET mean_psi_sgseq=NULL "
+                    "WHERE junctionID='J_MAJIQ_ONLY'")
+                conn.execute(
+                    "UPDATE junction_summary_stats SET mean_psi_majiq=0 "
+                    "WHERE junctionID='J_NO_MAJIQ'")
+                conn.commit()
+            write_status(status, [("S1", "SUCCESS")])
+            self.assertEqual(validator.validate(db, status, "G"), 0)
+            with sqlite3.connect(db) as conn:
+                # Missing PSI cannot justify a nonzero stored mean.
+                conn.execute(
+                    "UPDATE junction_summary_stats SET mean_psi_sgseq=0.7 "
+                    "WHERE junctionID='J_MAJIQ_ONLY'")
+                conn.commit()
+            self.assertEqual(validator.validate(db, status, "G"), 1)
+
     def test_failed_sample_rolled_back_and_later_sample_imported(self):
         importer = load("import_batch")
         validator = load("validate_batch_database")
