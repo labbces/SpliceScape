@@ -358,7 +358,18 @@ process SGSEQ {
     set +e
     SGSeq_v2.2.R -g "${genomeGFF_file}" -c ${num_cores} -b "${bam_file}" -s "${sra_accession}" -o $outPrefix --lib_paths "${r_libs_path}"
     code=\$?
-    if [ "\$code" -eq 0 ] && [ -d "${outPrefix}" ]; then
+    if [ "\$code" -eq 0 ]; then
+      for required in sgseq_A5SS.tsv sgseq_A3SS.tsv sgseq_RI.tsv \
+          sgseq_SE.tsv sgseq_MXE.tsv sgseq_AFE.tsv sgseq_ALE.tsv \
+          sgseq_constitutive.tsv; do
+        if [ ! -f "${outPrefix}/\$required" ]; then
+          echo "SGSEQ missing expected output: \$required" >&2
+          code=1
+          break
+        fi
+      done
+    fi
+    if [ "\$code" -eq 0 ]; then
       state=SUCCESS
     else
       state=FAILED
@@ -575,7 +586,18 @@ process MAJIQ_VOILA_MODULIZE{
     set +e
     voila modulize ${majiq_build} ${majiq_psi}  ${majiq_sg_coverage}  -d ${sra_accession}_majiq -j ${task.cpus} --keep-constitutive --show-all --show-read-counts --overwrite
     code=\$?
-    if [ "\$code" -eq 0 ] && [ -d "${sra_accession}_majiq" ]; then
+    if [ "\$code" -eq 0 ]; then
+        for required in alt5prime.tsv alt3prime.tsv alternative_intron.tsv \
+            tandem_cassette.tsv cassette.tsv mutually_exclusive.tsv \
+            alternate_first_exon.tsv alternate_last_exon.tsv constitutive.tsv; do
+            if [ ! -f "${sra_accession}_majiq/\$required" ]; then
+                echo "MAJIQ_VOILA_MODULIZE missing expected output: \$required" >&2
+                code=1
+                break
+            fi
+        done
+    fi
+    if [ "\$code" -eq 0 ]; then
         state=SUCCESS
         ${cleanup}
     else
