@@ -47,6 +47,7 @@ def main():
     ap.add_argument("--status", default="batch_import_status.tsv")
     ap.add_argument("--scratch-dir", required=True, help="Existing node-local scratch directory")
     ap.add_argument("--outdir", required=True)
+    ap.add_argument("--existing-db", help="Existing persistent database to extend, if present")
     a = ap.parse_args()
 
     destination = Path(a.destination).resolve()
@@ -73,6 +74,13 @@ def main():
     results = []
     with tempfile.TemporaryDirectory(prefix="splicescape-db-", dir=scratch) as folder:
         local_db = Path(folder) / "splicescape.sqlite"
+        if a.existing_db and Path(a.existing_db).is_file():
+            # Never mutate the persistent database from the import process.
+            # Work entirely on node-local scratch, then finalize separately.
+            source = Path(a.existing_db).resolve()
+            with sqlite3.connect(f"{source.as_uri()}?mode=ro", uri=True) as src:
+                with sqlite3.connect(local_db) as dst:
+                    src.backup(dst)
         run([sys.executable, str(HERE / "merging_outputs.py"),
              "--db", str(local_db), "--spp", a.species,
              "--genome_version", a.genome_version], "CREATE_DB")
