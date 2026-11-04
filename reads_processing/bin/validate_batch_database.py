@@ -93,7 +93,10 @@ def validate(database, status_file, genome_version, atol=1e-9, rtol=1e-9):
                    SUM(js.reads_sgseq_3p) AS sum_reads_sgseq_3p,
                    SUM(js.reads_sgseq_5p) AS sum_reads_sgseq_5p,
                    COUNT(js.psi_majiq) AS n_of_samples_majiq,
-                   COUNT(js.psi_sgseq) AS n_of_samples_sgseq
+                   COUNT(js.psi_sgseq) AS n_of_samples_sgseq,
+                   COUNT(js.reads_majiq) AS n_reads_majiq,
+                   COUNT(js.reads_sgseq_3p) AS n_reads_sgseq_3p,
+                   COUNT(js.reads_sgseq_5p) AS n_reads_sgseq_5p
             FROM junction_sample_stats js
             JOIN splicing_events se ON js.junctionID=se.junctionID
             WHERE se.genome_version = ?
