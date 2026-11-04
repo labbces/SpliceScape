@@ -101,6 +101,22 @@ def create_tables(db, genome_version, species_name, ref_table=None, ref_column="
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_summary_junction ON junction_summary_stats(junctionID)')
 
 
+            # Persistent per-reference sample outcome registry.
+            # Only terminal outcomes are recorded; interrupted runs remain eligible.
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS sample_processing_status (
+                sample_id TEXT NOT NULL,
+                genome_version TEXT NOT NULL,
+                status TEXT NOT NULL CHECK(status IN ('SUCCESS', 'FAILED')),
+                failed_stage TEXT NOT NULL DEFAULT '',
+                exit_code TEXT NOT NULL DEFAULT '',
+                reason TEXT NOT NULL DEFAULT '',
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (sample_id, genome_version),
+                FOREIGN KEY (genome_version) REFERENCES genome_info(genome_version)
+            )
+            """)
+
             # Per-sample QC metrics from BBDuk and STAR.
             # The source log is parsed after successful biological analyses.
             cursor.execute("""
