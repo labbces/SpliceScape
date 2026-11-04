@@ -458,11 +458,18 @@ process MAJIQ_BUILD{
     def majiq_annotation = "${outdir}/majiq/backbone/annotation_${species_name}.zarr"
     def majiq_build = "${outdir}/majiq/scratch/${sra_accession}/build/build_${species_name}_${sra_accession}_sg.zarr"
     def majiq_sj = "${outdir}/majiq/scratch/${sra_accession}/sj/${species_name}_${sra_accession}.Aligned.sortedByCoord.out.bam.sj"
+    def injectFailure = params.enable_failure_injection == true &&
+        params.test_failures[sra_accession.toString()]?.contains('MAJIQ_BUILD') == true
     """
     mkdir -p ${outdir}/majiq/scratch/${sra_accession}/build
     set +e
-    majiq-v3 build ${majiq_annotation} ${majiq_build} --sjs ${majiq_sj} --nthreads ${task.cpus} --overwrite
-    code=\$?
+    if [ '${injectFailure}' = 'true' ]; then
+        echo 'SPLICESCAPE_TEST_INJECTED_FAILURE stage=MAJIQ_BUILD sample=${sra_accession}' >&2
+        code=97
+    else
+        majiq-v3 build ${majiq_annotation} ${majiq_build} --sjs ${majiq_sj} --nthreads ${task.cpus} --overwrite
+        code=\$?
+    fi
     if [ "\$code" -eq 0 ]; then
       state=SUCCESS
       touch build_${species_name}_${sra_accession}_sg.ok
@@ -491,11 +498,18 @@ process MAJIQ_PSI {
     def majiq_build = "${outdir}/majiq/scratch/${sra_accession}/build/build_${species_name}_${sra_accession}_sg.zarr"
     def majiq_psi = "${outdir}/majiq/scratch/${sra_accession}/psi/psi_${species_name}_${sra_accession}.psicov"
     def majiq_sj = "${outdir}/majiq/scratch/${sra_accession}/sj/${species_name}_${sra_accession}.Aligned.sortedByCoord.out.bam.sj"
+    def injectFailure = params.enable_failure_injection == true &&
+        params.test_failures[sra_accession.toString()]?.contains('MAJIQ_PSI') == true
     """
     mkdir -p ${outdir}/majiq/scratch/${sra_accession}/psi
     set +e
-    majiq-v3 psi-coverage ${majiq_build} ${majiq_psi} ${majiq_sj} --nthreads ${task.cpus} --overwrite
-    code=\$?
+    if [ '${injectFailure}' = 'true' ]; then
+        echo 'SPLICESCAPE_TEST_INJECTED_FAILURE stage=MAJIQ_PSI sample=${sra_accession}' >&2
+        code=97
+    else
+        majiq-v3 psi-coverage ${majiq_build} ${majiq_psi} ${majiq_sj} --nthreads ${task.cpus} --overwrite
+        code=\$?
+    fi
     if [ "\$code" -eq 0 ]; then
       state=SUCCESS
       touch psi_${species_name}_${sra_accession}.ok
@@ -524,11 +538,18 @@ process MAJIQ_SG_COVERAGE{
     def majiq_build = "${outdir}/majiq/scratch/${sra_accession}/build/build_${species_name}_${sra_accession}_sg.zarr"
     def majiq_sg_coverage = "${outdir}/majiq/scratch/${sra_accession}/sg_coverage/build_${species_name}_${sra_accession}.sgc"
     def majiq_sj = "${outdir}/majiq/scratch/${sra_accession}/sj/${species_name}_${sra_accession}.Aligned.sortedByCoord.out.bam.sj"
+    def injectFailure = params.enable_failure_injection == true &&
+        params.test_failures[sra_accession.toString()]?.contains('MAJIQ_SG_COVERAGE') == true
     """
     mkdir -p ${outdir}/majiq/scratch/${sra_accession}/sg_coverage
     set +e
-    majiq-v3 sg-coverage ${majiq_build} ${majiq_sg_coverage} ${majiq_sj} --nthreads ${task.cpus} --overwrite
-    code=\$?
+    if [ '${injectFailure}' = 'true' ]; then
+        echo 'SPLICESCAPE_TEST_INJECTED_FAILURE stage=MAJIQ_SG_COVERAGE sample=${sra_accession}' >&2
+        code=97
+    else
+        majiq-v3 sg-coverage ${majiq_build} ${majiq_sg_coverage} ${majiq_sj} --nthreads ${task.cpus} --overwrite
+        code=\$?
+    fi
     if [ "\$code" -eq 0 ]; then
       state=SUCCESS
       touch build_sg_${species_name}_${sra_accession}.ok
@@ -578,14 +599,21 @@ process MAJIQ_VOILA_MODULIZE{
 
     def cleanup = params.rm_majiq_scratch ? """
     rm -rf ${outdir}/majiq/scratch/${sra_accession}/*
+    def injectFailure = params.enable_failure_injection == true &&
+        params.test_failures[sra_accession.toString()]?.contains('MAJIQ_VOILA_MODULIZE') == true
     """ : "true"
 
     """
     mkdir -p ${outdir}/majiq/results
     
     set +e
-    voila modulize ${majiq_build} ${majiq_psi}  ${majiq_sg_coverage}  -d ${sra_accession}_majiq -j ${task.cpus} --keep-constitutive --show-all --show-read-counts --overwrite
-    code=\$?
+    if [ '${injectFailure}' = 'true' ]; then
+        echo 'SPLICESCAPE_TEST_INJECTED_FAILURE stage=MAJIQ_VOILA_MODULIZE sample=${sra_accession}' >&2
+        code=97
+    else
+        voila modulize ${majiq_build} ${majiq_psi}  ${majiq_sg_coverage}  -d ${sra_accession}_majiq -j ${task.cpus} --keep-constitutive --show-all --show-read-counts --overwrite
+        code=\$?
+    fi
     if [ "\$code" -eq 0 ]; then
         for required in alt5prime.tsv alt3prime.tsv alternative_intron.tsv \
             tandem_cassette.tsv cassette.tsv mutually_exclusive.tsv \
