@@ -117,31 +117,27 @@ def validate(database, status_file, genome_version, atol=1e-9, rtol=1e-9):
                 issues.append(f"missing summary row: {expected['junctionID']}")
                 mismatches += 1
                 continue
-            # An untouched summary row has default zero means. SQL
-            # bulk_update writes NULL means when all PSI values are NULL.
-            # Both cases are valid when COUNT(psi) is zero. Read totals are
-            # validated independently; do not coerce their NULL values.
+            # SQL aggregates return NULL when their inputs are entirely NULL.
+            # An untouched summary column can retain its default zero.
+            # Validate absence independently for each measured input.
+            counts = {
+                "mean_psi_majiq": expected["n_of_samples_majiq"],
+                "mean_psi_sgseq": expected["n_of_samples_sgseq"],
+                "sum_reads_majiq": expected["n_reads_majiq"],
+                "sum_reads_sgseq_3p": expected["n_reads_sgseq_3p"],
+                "sum_reads_sgseq_5p": expected["n_reads_sgseq_5p"],
+            }
             changed = []
             for name in METRICS:
                 expected_value = expected[name]
-                # Mean PSI can be NULL after a real bulk_update if the
-                # relevant tool has no non-NULL PSI observations. A freshly
-                # initialized summary may instead retain its default 0.
-                # Both represent an absent mean, but ONLY when COUNT(psi)=0.
-                absent_mean = (
-                    name == "mean_psi_majiq"
-                    and expected["n_of_samples_majiq"] == 0
-                ) or (
-                    name == "mean_psi_sgseq"
-                    and expected["n_of_samples_sgseq"] == 0
-                )
-                if absent_mean:
-                    equal = (
-                        (expected_value is None and actual[name] is None)
-                        or (expected_value is None and actual[name] == 0)
+                actual_value = actual[name]
+                if name in counts and counts[name] == 0:
+                    equal = expected_value is None and (
+                        actual_value is None
+                        or equivalent(actual_value, 0, atol, rtol)
                     )
                 else:
-                    equal = equivalent(expected_value, actual[name], atol, rtol)
+                    equal = equivalent(expected_value, actual_value, atol, rtol)
                 if not equal:
                     changed.append(name)
             if changed:
