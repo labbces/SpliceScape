@@ -439,7 +439,9 @@ process MAJIQ_BUILD{
     val species_name
 
     output:
-    tuple val("${sra_accession}"), path("build_${species_name}_${sra_accession}_sg.ok"), emit: build_file
+    tuple val("${sra_accession}"), path("build_${species_name}_${sra_accession}_sg.ok"), optional: true, emit: build_file
+
+    tuple val(sra_accession), path("status_majiq_build_${sra_accession}.tsv"), emit: status
 
     script:
     def majiq_annotation = "${outdir}/majiq/backbone/annotation_${species_name}.zarr"
@@ -447,8 +449,17 @@ process MAJIQ_BUILD{
     def majiq_sj = "${outdir}/majiq/scratch/${sra_accession}/sj/${species_name}_${sra_accession}.Aligned.sortedByCoord.out.bam.sj"
     """
     mkdir -p ${outdir}/majiq/scratch/${sra_accession}/build
-    majiq-v3 build ${majiq_annotation} ${majiq_build} --sjs ${majiq_sj} --nthreads ${task.cpus} --overwrite && \\
-    touch build_${species_name}_${sra_accession}_sg.ok
+    set +e
+    majiq-v3 build ${majiq_annotation} ${majiq_build} --sjs ${majiq_sj} --nthreads ${task.cpus} --overwrite
+    code=\$?
+    if [ "\$code" -eq 0 ]; then
+      state=SUCCESS
+      touch build_${species_name}_${sra_accession}_sg.ok
+    else
+      state=FAILED
+    fi
+    printf '%s\\t%s\\t%s\\t%s\\n' '${sra_accession}' MAJIQ_BUILD "\$state" "\$code" > status_majiq_build_${sra_accession}.tsv
+    exit 0
     """
 }
 
@@ -461,7 +472,9 @@ process MAJIQ_PSI {
     tuple val(sra_accession), path(build_file), path(sj_file)
 
     output:
-    tuple val("${sra_accession}"), path("psi_${species_name}_${sra_accession}.ok"), emit: psi_file
+    tuple val("${sra_accession}"), path("psi_${species_name}_${sra_accession}.ok"), optional: true, emit: psi_file
+
+    tuple val(sra_accession), path("status_majiq_psi_${sra_accession}.tsv"), emit: status
 
     script:
     def majiq_build = "${outdir}/majiq/scratch/${sra_accession}/build/build_${species_name}_${sra_accession}_sg.zarr"
@@ -469,8 +482,17 @@ process MAJIQ_PSI {
     def majiq_sj = "${outdir}/majiq/scratch/${sra_accession}/sj/${species_name}_${sra_accession}.Aligned.sortedByCoord.out.bam.sj"
     """
     mkdir -p ${outdir}/majiq/scratch/${sra_accession}/psi
-    majiq-v3 psi-coverage ${majiq_build} ${majiq_psi} ${majiq_sj} --nthreads ${task.cpus} --overwrite && \\
-    touch psi_${species_name}_${sra_accession}.ok
+    set +e
+    majiq-v3 psi-coverage ${majiq_build} ${majiq_psi} ${majiq_sj} --nthreads ${task.cpus} --overwrite
+    code=\$?
+    if [ "\$code" -eq 0 ]; then
+      state=SUCCESS
+      touch psi_${species_name}_${sra_accession}.ok
+    else
+      state=FAILED
+    fi
+    printf '%s\\t%s\\t%s\\t%s\\n' '${sra_accession}' MAJIQ_PSI "\$state" "\$code" > status_majiq_psi_${sra_accession}.tsv
+    exit 0
     """
 }
 
@@ -483,7 +505,9 @@ process MAJIQ_SG_COVERAGE{
     tuple val(sra_accession), path(build_file), path(sj_file)
     
     output:
-    tuple val("${sra_accession}"), path("build_sg_${species_name}_${sra_accession}.ok"), emit: sg_coverage_file
+    tuple val("${sra_accession}"), path("build_sg_${species_name}_${sra_accession}.ok"), optional: true, emit: sg_coverage_file
+
+    tuple val(sra_accession), path("status_majiq_sg_coverage_${sra_accession}.tsv"), emit: status
 
     script:
     def majiq_build = "${outdir}/majiq/scratch/${sra_accession}/build/build_${species_name}_${sra_accession}_sg.zarr"
@@ -491,14 +515,23 @@ process MAJIQ_SG_COVERAGE{
     def majiq_sj = "${outdir}/majiq/scratch/${sra_accession}/sj/${species_name}_${sra_accession}.Aligned.sortedByCoord.out.bam.sj"
     """
     mkdir -p ${outdir}/majiq/scratch/${sra_accession}/sg_coverage
-    majiq-v3 sg-coverage ${majiq_build} ${majiq_sg_coverage} ${majiq_sj} --nthreads ${task.cpus} --overwrite && \\
-    touch build_sg_${species_name}_${sra_accession}.ok
+    set +e
+    majiq-v3 sg-coverage ${majiq_build} ${majiq_sg_coverage} ${majiq_sj} --nthreads ${task.cpus} --overwrite
+    code=\$?
+    if [ "\$code" -eq 0 ]; then
+      state=SUCCESS
+      touch build_sg_${species_name}_${sra_accession}.ok
+    else
+      state=FAILED
+    fi
+    printf '%s\\t%s\\t%s\\t%s\\n' '${sra_accession}' MAJIQ_SG_COVERAGE "\$state" "\$code" > status_majiq_sg_coverage_${sra_accession}.tsv
+    exit 0
     """
 }
 
 process MAJIQ_VOILA_MODULIZE{
     tag "${sra_accession} on ${species_name}"
-    errorStrategy 'finish'
+    errorStrategy 'terminate'
     publishDir "${params.outdir}/majiq/results/", mode: 'copy'
 
     input:
@@ -510,7 +543,7 @@ process MAJIQ_VOILA_MODULIZE{
     output:
     tuple val("MAJIQ"), \
           val("${sra_accession}"), \
-          path("${sra_accession}_majiq/"), emit: majiq_results
+          path("${sra_accession}_majiq/"), optional: true, emit: majiq_results
 
         tuple val(sra_accession), 
           path("${sra_accession}_majiq/alt5prime.tsv"),
@@ -521,7 +554,9 @@ process MAJIQ_VOILA_MODULIZE{
           path("${sra_accession}_majiq/mutually_exclusive.tsv"),
           path("${sra_accession}_majiq/alternate_first_exon.tsv"),
           path("${sra_accession}_majiq/alternate_last_exon.tsv"),
-          path("${sra_accession}_majiq/constitutive.tsv"), emit: majiq_csv_sra    
+          path("${sra_accession}_majiq/constitutive.tsv"), optional: true, emit: majiq_csv_sra    
+
+    tuple val(sra_accession), path("status_majiq_modulize_${sra_accession}.tsv"), emit: status
 
     script:
     def majiq_build = "${outdir}/majiq/scratch/${sra_accession}/build/build_${species_name}_${sra_accession}_sg.zarr"
@@ -537,8 +572,19 @@ process MAJIQ_VOILA_MODULIZE{
     """
     mkdir -p ${outdir}/majiq/results
     
-    voila modulize ${majiq_build} ${majiq_psi}  ${majiq_sg_coverage}  -d ${sra_accession}_majiq -j ${task.cpus} --keep-constitutive --show-all --show-read-counts --overwrite && \\
-    ${cleanup}
+    set +e
+    voila modulize ${majiq_build} ${majiq_psi}  ${majiq_sg_coverage}  -d ${sra_accession}_majiq -j ${task.cpus} --keep-constitutive --show-all --show-read-counts --overwrite
+    code=\$?
+    if [ "\$code" -eq 0 ] && [ -d "${sra_accession}_majiq" ]; then
+        state=SUCCESS
+        ${cleanup}
+    else
+        state=FAILED
+        if [ "\$code" -eq 0 ]; then code=1; fi
+        rm -rf "${sra_accession}_majiq"
+    fi
+    printf '%s\\t%s\\t%s\\t%s\\n' '${sra_accession}' MAJIQ_VOILA_MODULIZE "\$state" "\$code" > status_majiq_modulize_${sra_accession}.tsv
+    exit 0
     """
 }
 
