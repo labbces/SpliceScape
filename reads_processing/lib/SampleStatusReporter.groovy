@@ -29,9 +29,6 @@ class SampleStatusReporter {
                 ]
             }
         }
-        if (!samples) {
-            throw new IllegalArgumentException("Sample manifest contains no accessions: ${readsFile}")
-        }
         def dir = new File(outdir)
         if (!dir.exists() && !dir.mkdirs()) {
             throw new IOException("Cannot create output directory: ${outdir}")
