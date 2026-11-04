@@ -673,6 +673,10 @@ process POPULATE_DB_BATCH {
     def dbFileName = new File(params.db.toString()).name
     // Persist absolute Nextflow work paths; keep work dirs until batch import.
     def rows = batch_records.collect { rec ->
+        // Detect accidental Nextflow tuple flattening before constructing a
+        // malformed TSV. The workflow must use collect(flat: false).
+        if (!(rec instanceof List) || rec.size() != 3)
+            error "Invalid batch import record: expected [sample, MAJIQ dir, SGSeq dir], got ${rec}"
         def sample = rec[0].toString()
         if (!(sample ==~ /[A-Za-z0-9_.-]+/))
             error "Unsafe sample accession in import manifest: ${sample}"
