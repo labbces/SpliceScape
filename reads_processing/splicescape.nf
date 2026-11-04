@@ -49,16 +49,24 @@ if (params.enable_failure_injection == true) {
     log.warn "test_failures was supplied but enable_failure_injection=false: no failures will be injected"
 }
 
-// Keep the user's reference SQLite file untouched; v2.2 requires a new output file.
-if (new File(params.db.toString()).exists()) {
-    error "Refusing to overwrite existing SQLite database: ${params.db}. Set db to a new file for v2.2 comparison."
-}
-
-// Run-level status tracking is observational: it never releases admission permits.
-// Every manifest entry is written immediately, and updates are persisted atomically.
-def sampleStatusReporter = new SampleStatusReporter(
-    params.reads_file.toString(), params.outdir.toString()
-)
+// Preflight runs synchronously on the launch host before any sample is admitted.
+// Existing SQLite databases are only read here; this step never writes to them.
+def preflightOutdir = new File(params.outdir.toString())
+if (!preflightOutdir.isDirectory() && !preflightOutdir.mkdirs())
+    error "Cannot create output directory: ${preflightOutdir}"
+def eligibleManifest = new File(preflightOutdir, "eligible_samples.txt").absolutePath
+def preflightReport = new File(preflightOutdir, "sample_preflight.tsv").absolutePath
+def preflightCmd = ["python3", "${projectDir}/bin/sample_registry.py",
+    "--manifest", params.reads_file.toString(),
+    "--db", params.db.toString(),
+    "--genome-version", params.species.toString(),
+    "--eligible", eligibleManifest, "--report", preflightReport]
+def preflightProcess = new ProcessBuilder(preflightCmd).redirectErrorStream(true).start()
+def preflightLog = preflightProcess.inputStream.getText("UTF-8")
+if (preflightProcess.waitFor() != 0) error "Sample preflight failed: ${preflightLog}"
+log.info preflightLog.trim()
+// The status reporter must only track admitted/eligible samples, not skipped IDs.
+def sampleStatusReporter = new SampleStatusReporter(eligibleManifest, params.outdir.toString())
 workflow.onComplete {
     sampleStatusReporter.completeReport()
 }
@@ -107,7 +115,7 @@ workflow {
         if (maximum < 1) error 'max_active_samples must be >= 1'
         def admissionSlots = new java.util.concurrent.Semaphore(maximum, true)
 
-        sra_id = channel.fromPath(params.reads_file).splitText()
+        sra_id = channel.fromPath(eligibleManifest).splitText()
             .map { line -> line.trim() }
             .filter { line -> !line.isEmpty() }
             .map { sample ->
@@ -449,14 +457,31 @@ workflow {
                 tuple(sample, batchOk)
             }
 
+        // Wait for all terminal sample outcomes before finalizing the SQLite
+        // status table. There is one FINALIZE_SAMPLE job for the whole batch.
+        terminal_events = early_failures
+            .map { sample, stage, state, code -> tuple(sample, 'FAILED', stage) }
+            .mix(branch_terminal.map { sample, sgState, mjState, stage ->
+                tuple(sample, (sgState == 'FAILED' || mjState == 'FAILED') ?
+                    'FAILED' : 'ANALYSIS_COMPLETE', stage)
+            })
+            .collect(flat: false)
+
         FINALIZE_SAMPLE(
-            imported_ok,
+            POPULATE_DB_BATCH.out.batch_result,
+            terminal_events,
+            eligibleManifest,
             params.outdir,
             params.species
         )
-        FINALIZE_SAMPLE.out.completed.subscribe { sample, marker ->
-            sampleStatusReporter.succeeded(sample)
-            log.info "Completed sample: ${sample}"
-        }
+        FINALIZE_SAMPLE.out.completed
+            .flatMap { report ->
+                report.text.readLines().drop(1).findAll { it.trim() }
+                    .collect { line -> line.split('\\t')[0] }
+            }
+            .subscribe { sample ->
+                sampleStatusReporter.succeeded(sample)
+                log.info "Completed sample: ${sample}"
+            }
 
 }
