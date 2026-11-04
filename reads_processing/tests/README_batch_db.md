@@ -1,3 +1,72 @@
+## One-run v2.3 test of all remaining MAJIQ failure stages
+
+The injection feature is **disabled by default**, and works only when
+`enable_failure_injection` is explicitly `true`. It short-circuits the
+selected MAJIQ command before it runs, writes exit code **97**, and retains the
+usual stage status TSV. It does not alter MAJIQ data or SQL calculation code.
+
+Use four *known-good* samples:
+
+```text
+ERR6801696
+SRR26589537
+SRR10027521
+SRR17687198
+```
+
+Copy your working v2.2/v2.3 JSON into a **new** test JSON file, give it a
+**new empty output directory** and **new database path**, set `reads_file`
+to the four-sample manifest, and add:
+
+```json
+{
+  "enable_failure_injection": true,
+  "test_failures": {
+    "ERR6801696": ["MAJIQ_BUILD"],
+    "SRR26589537": ["MAJIQ_PSI", "MAJIQ_SG_COVERAGE"],
+    "SRR10027521": ["MAJIQ_VOILA_MODULIZE"]
+  }
+}
+```
+
+Merge these keys into the *existing* JSON object; do not replace its other
+parameters. Leave `SRR17687198` unlisted as the successful control.
+
+Expected `sample_status.txt`:
+
+| Sample | Status | Expected failed stages |
+| --- | --- | --- |
+| ERR6801696 | FAILED | MAJIQ_BUILD (97) |
+| SRR26589537 | FAILED | MAJIQ_PSI;MAJIQ_SG_COVERAGE (97;97) |
+| SRR10027521 | FAILED | MAJIQ_VOILA_MODULIZE (97) |
+| SRR17687198 | SUCCESS | none |
+
+Exactly **one** sample should reach `POPULATE_DB_BATCH`.
+`batch_import_status.tsv` should therefore contain a header plus one
+`SUCCESS` row for `SRR17687198`. Run the read-only
+`validate_batch_database.py` on the resulting SQLite file.
+
+Useful log checks:
+
+```bash
+grep -E 'SPLICESCAPE_TEST_INJECTED_FAILURE|SAMPLE_STAGE_FAILED|SAMPLE_TERMINAL|SAMPLE_ANALYSIS_COMPLETE|BATCH_IMPORT_COMPLETE' reads_processing/.nextflow.log
+cat /new/outdir/sample_status.txt
+cat /new/outdir/db/batch_import_status.tsv
+```
+
+The injected-failure string is written to the individual process task
+`.command.err` file and is not guaranteed to appear in `.nextflow.log`.
+The stage and terminal outcome messages should appear in `.nextflow.log`.
+To locate task logs, find `work/*/*/status_majiq_*.tsv` or inspect
+the execution trace.
+
+A real test also verifies that the fourth sample continues after failures
+without hanging the Nextflow admission semaphore.
+
+**Safety:** Never enable injection in a production run. For normal usage,
+remove both JSON keys or set `enable_failure_injection` to `false`.
+Do not test against existing results or DB paths.
+
 ## Development: v2.3 MAJIQ intermediate-failure recovery
 
 **Branch:** `splicescape-v2.3` (do not test development code in
