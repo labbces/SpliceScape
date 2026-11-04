@@ -1,3 +1,68 @@
+## v2.3 persistent sample statuses and preflight skipping (development)
+
+The SQLite status registry is `sample_processing_status` with primary key
+`(sample_id, genome_version)`. Fields: `status` (`SUCCESS` or
+`FAILED`), `failed_stage`, `exit_code`, `reason`, and `updated_at`.
+
+**Preflight:** Before admitting any samples, `sample_registry.py` reads the
+configured database (read-only). It checks for the status table and excludes
+identifiers already having either terminal status for the requested reference.
+If the database or status table does not exist, all manifest IDs are eligible.
+The launch directory receives `sample_preflight.tsv` (PROCESS/SKIP) and
+`eligible_samples.txt`. An existing database with no status table is
+migrated during batch import; pre-existing biological rows without status
+records are not automatically classified and may warrant manual backfilling.
+
+**Import and finalization:** `POPULATE_DB_BATCH` uses node-local SQLite
+scratch, copying the current database with SQLite's backup API when it exists.
+It retains biological rows and appends new sample observations using the
+unchanged parsers. It does **not** mutate the persistent database.
+
+One batch-level `FINALIZE_SAMPLE` process waits for terminal outcomes and
+the import result. Only this process writes terminal outcomes into
+`sample_processing_status`, including early failures, MAJIQ/SGSeq failures,
+and import failures. It validates and atomically replaces the persistent
+database from a closed scratch snapshot. It also performs successful-sample
+BAM cleanup when configured. Intermediate importer/finalizer processes
+deliberately disable Nextflow caching because the external SQLite database
+can change between resumed runs.
+
+Interrupted or non-terminal samples are **not** inserted as FAILED; they
+remain eligible for future runs. Missing final outcomes abort the finalizer
+rather than silently publishing an incomplete database. Sample statuses
+are scoped to the reference genome; an accession processed against one
+genome version remains eligible against another.
+
+**Do not run two SpliceScape pipelines concurrently against the same SQLite
+destination.** Preflight and batch snapshots are not a transactional
+multi-writer reservation protocol.
+
+Quick standalone regression:
+
+```bash
+python3 reads_processing/tests/test_sample_registry.py
+```
+
+Then test on SGE using a new database and two known-good samples plus one
+controlled MAJIQ failure. Check the registry:
+
+```sql
+SELECT sample_id, genome_version, status, failed_stage, exit_code, reason
+FROM sample_processing_status ORDER BY sample_id;
+```
+
+Next, run a new manifest against the **same database** containing those
+previously processed IDs and one genuinely new sample. Verify preflight
+skips both SUCCESS and FAILED IDs, imports only the new accession, and
+preserves prior junction summaries. Finally test a manifest where all
+IDs have already been processed (zero eligible) and a reference version
+not previously registered.
+
+**Not yet production-validated:** These are development changes.
+Complete local regression and real Nextflow/SGE incremental runs before
+relying on existing valuable SQLite databases. Keep a backup throughout
+these integration tests.
+
 ## One-run v2.3 test of all remaining MAJIQ failure stages
 
 The injection feature is **disabled by default**, and works only when
