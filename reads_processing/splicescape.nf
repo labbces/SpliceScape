@@ -323,7 +323,9 @@ workflow {
             .map { sample, majiqDir, sgseqDir ->
                 tuple(sample, majiqDir, sgseqDir)
             }
-            .collect()
+            // Nextflow collect() flattens tuple values by default. Preserve
+            // [sample, MAJIQ directory, SGSeq directory] records as rows.
+            .collect(flat: false)
 
         POPULATE_DB_BATCH (
             paired_batch,
