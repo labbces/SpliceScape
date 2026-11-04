@@ -24,6 +24,31 @@ include { POPULATE_DB_BATCH          } from './modules.nf'
 include { FINALIZE_SAMPLE             } from './modules.nf'
 
 
+// Explicit test-only failure injection. Disabled for ordinary runs.
+if (!params.containsKey('enable_failure_injection')) params.enable_failure_injection = false
+if (!params.containsKey('test_failures')) params.test_failures = [:]
+if (!(params.test_failures instanceof Map)) {
+    error "test_failures must be a JSON object: sample accession -> list of MAJIQ stages"
+}
+def allowedInjectedStages = ['MAJIQ_BUILD', 'MAJIQ_PSI',
+                             'MAJIQ_SG_COVERAGE', 'MAJIQ_VOILA_MODULIZE'] as Set
+params.test_failures.each { sample, stages ->
+    if (!(sample.toString() ==~ /[A-Za-z0-9_.-]+/)) {
+        error "Invalid accession in test_failures: ${sample}"
+    }
+    if (!(stages instanceof List) || stages.isEmpty() ||
+        stages.any { !(it in allowedInjectedStages) }) {
+        error "Invalid injected stages for ${sample}: ${stages}"
+    }
+}
+if (params.enable_failure_injection == true) {
+    if (params.test_failures.isEmpty())
+        error "enable_failure_injection=true requires at least one test_failures entry"
+    log.warn "TEST MODE: controlled MAJIQ failures enabled for ${params.test_failures.keySet().join(', ')}"
+} else if (!params.test_failures.isEmpty()) {
+    log.warn "test_failures was supplied but enable_failure_injection=false: no failures will be injected"
+}
+
 // Keep the user's reference SQLite file untouched; v2.2 requires a new output file.
 if (new File(params.db.toString()).exists()) {
     error "Refusing to overwrite existing SQLite database: ${params.db}. Set db to a new file for v2.2 comparison."
