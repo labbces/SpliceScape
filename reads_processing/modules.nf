@@ -599,9 +599,9 @@ process MAJIQ_VOILA_MODULIZE{
 
     def cleanup = params.rm_majiq_scratch ? """
     rm -rf ${outdir}/majiq/scratch/${sra_accession}/*
+    """ : "true"
     def injectFailure = params.enable_failure_injection == true &&
         params.test_failures[sra_accession.toString()]?.contains('MAJIQ_VOILA_MODULIZE') == true
-    """ : "true"
 
     """
     mkdir -p ${outdir}/majiq/results
