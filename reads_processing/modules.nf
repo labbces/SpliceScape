@@ -676,7 +676,7 @@ process POPULATE_DB_BATCH {
         def sample = rec[0].toString()
         if (!(sample ==~ /[A-Za-z0-9_.-]+/))
             error "Unsafe sample accession in import manifest: ${sample}"
-        [sample, rec[1].toAbsolutePath(), rec[2].toAbsolutePath()].join('\t')
+        [sample, new File(rec[1].toString()).absolutePath, new File(rec[2].toString()).absolutePath].join('\t')
     }.join('\n')
     """
     set -euo pipefail
