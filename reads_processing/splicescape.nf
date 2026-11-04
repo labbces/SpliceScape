@@ -208,35 +208,47 @@ workflow {
             annotation_ch,
         )
 
-        // Early MAJIQ failures are terminal for that branch. A successful
-        // MAJIQ_SJ is NOT terminal; its branch continues through Modulize.
-        majiq_sj_failures = MAJIQ_SJ.out.status
-            .map { sample, statusFile ->
-                def fields = statusFile.text.trim().split('\\t')
-                if (fields.size() != 4 || fields[0] != sample || fields[1] != 'MAJIQ_SJ') {
-                    error "Malformed MAJIQ SJ status for ${sample}: ${statusFile}"
-                }
-                if (fields[2] == 'FAILED') {
-                    sampleStatusReporter.stageFailed(sample, "MAJIQ_SJ", fields[3])
-                    log.warn "SAMPLE_STAGE_FAILED sample=${sample} stage=MAJIQ_SJ exit=${fields[3]}"
-                    tuple(sample, 'FAILED', 'MAJIQ_SJ')
-                } else if (fields[2] == 'SUCCESS') {
-                    null
-                } else {
-                    error "Unknown MAJIQ SJ status: ${fields[2]}"
-                }
+        // Every MAJIQ stage emits a status record, even on tool failure.
+        // Failed stages emit no .ok marker, preventing downstream execution.
+        // The MAJIQ branch must produce exactly ONE terminal record per sample.
+        majiq_sj_status = MAJIQ_SJ.out.status.map { sample, statusFile ->
+            def f = statusFile.text.trim().split('\\t')
+            if (f.size() != 4 || f[0] != sample || f[1] != 'MAJIQ_SJ'
+                || !(f[2] in ['SUCCESS', 'FAILED']))
+                error "Malformed MAJIQ_SJ status for ${sample}: ${statusFile}"
+            tuple(sample, f[2], f[3])
+        }
+        majiq_sj_failures = majiq_sj_status
+            .filter { sample, state, code -> state == 'FAILED' }
+            .map { sample, state, code ->
+                sampleStatusReporter.stageFailed(sample, 'MAJIQ_SJ', code)
+                log.warn "SAMPLE_STAGE_FAILED sample=${sample} stage=MAJIQ_SJ exit=${code}"
+                tuple(sample, 'FAILED', 'MAJIQ_SJ')
             }
-            .filter { it != null }
 
         MAJIQ_BUILD (
             annotation_ch,
             MAJIQ_SJ.out.sj_file,
-            params.outdir, 
+            params.outdir,
             params.species
         )
+        majiq_build_failures = MAJIQ_BUILD.out.status
+            .map { sample, statusFile ->
+                def f = statusFile.text.trim().split('\\t')
+                if (f.size() != 4 || f[0] != sample || f[1] != 'MAJIQ_BUILD'
+                    || !(f[2] in ['SUCCESS', 'FAILED']))
+                    error "Malformed MAJIQ_BUILD status for ${sample}: ${statusFile}"
+                tuple(sample, f[2], f[3])
+            }
+            .filter { sample, state, code -> state == 'FAILED' }
+            .map { sample, state, code ->
+                sampleStatusReporter.stageFailed(sample, 'MAJIQ_BUILD', code)
+                log.warn "SAMPLE_STAGE_FAILED sample=${sample} stage=MAJIQ_BUILD exit=${code}"
+                tuple(sample, 'FAILED', 'MAJIQ_BUILD')
+            }
 
         sj_combined = MAJIQ_BUILD.out.build_file
-                      .join(MAJIQ_SJ.out.sj_file)
+            .join(MAJIQ_SJ.out.sj_file)
 
         MAJIQ_PSI (
             params.outdir,
@@ -245,7 +257,7 @@ workflow {
         )
 
         sg_coverage_combined = MAJIQ_BUILD.out.build_file
-                            .join(MAJIQ_SJ.out.sj_file)
+            .join(MAJIQ_SJ.out.sj_file)
 
         MAJIQ_SG_COVERAGE (
             params.outdir,
@@ -253,10 +265,47 @@ workflow {
             sg_coverage_combined
         )
 
+        // PSI and SG_COVERAGE execute independently, so wait for BOTH
+        // outcomes before emitting one terminal failure for the MAJIQ branch.
+        psi_status = MAJIQ_PSI.out.status.map { sample, statusFile ->
+            def f = statusFile.text.trim().split('\\t')
+            if (f.size() != 4 || f[0] != sample || f[1] != 'MAJIQ_PSI'
+                || !(f[2] in ['SUCCESS', 'FAILED']))
+                error "Malformed MAJIQ_PSI status for ${sample}: ${statusFile}"
+            tuple(sample, f[2], f[3])
+        }
+        coverage_status = MAJIQ_SG_COVERAGE.out.status.map { sample, statusFile ->
+            def f = statusFile.text.trim().split('\\t')
+            if (f.size() != 4 || f[0] != sample || f[1] != 'MAJIQ_SG_COVERAGE'
+                || !(f[2] in ['SUCCESS', 'FAILED']))
+                error "Malformed MAJIQ_SG_COVERAGE status for ${sample}: ${statusFile}"
+            tuple(sample, f[2], f[3])
+        }
+        majiq_parallel_failures = psi_status.join(
+            coverage_status, by: 0, failOnDuplicate: true, failOnMismatch: true
+        )
+        .filter { sample, psiState, psiCode, covState, covCode ->
+            psiState == 'FAILED' || covState == 'FAILED'
+        }
+        .map { sample, psiState, psiCode, covState, covCode ->
+            def failedStages = []
+            if (psiState == 'FAILED') {
+                sampleStatusReporter.stageFailed(sample, 'MAJIQ_PSI', psiCode)
+                log.warn "SAMPLE_STAGE_FAILED sample=${sample} stage=MAJIQ_PSI exit=${psiCode}"
+                failedStages << 'MAJIQ_PSI'
+            }
+            if (covState == 'FAILED') {
+                sampleStatusReporter.stageFailed(sample, 'MAJIQ_SG_COVERAGE', covCode)
+                log.warn "SAMPLE_STAGE_FAILED sample=${sample} stage=MAJIQ_SG_COVERAGE exit=${covCode}"
+                failedStages << 'MAJIQ_SG_COVERAGE'
+            }
+            tuple(sample, 'FAILED', failedStages.join(';'))
+        }
+
         voila_modulize_combined = MAJIQ_BUILD.out.build_file
-                                    .join(MAJIQ_PSI.out.psi_file)
-                                    .join(MAJIQ_SG_COVERAGE.out.sg_coverage_file)
-    
+            .join(MAJIQ_PSI.out.psi_file)
+            .join(MAJIQ_SG_COVERAGE.out.sg_coverage_file)
+
         MAJIQ_VOILA_MODULIZE (
             params.outdir,
             params.species,
@@ -264,16 +313,25 @@ workflow {
             params.majiq_cores
         )
 
-        // A branch's terminal outcome is independent of whether a tool
-        // produced an importable directory. For now, MAJIQ failures at SJ
-        // and successful Modulize are handled explicitly; intermediate MAJIQ
-        // process failures still require status wrappers.
+        majiq_modulize_terminal = MAJIQ_VOILA_MODULIZE.out.status
+            .map { sample, statusFile ->
+                def f = statusFile.text.trim().split('\\t')
+                if (f.size() != 4 || f[0] != sample || f[1] != 'MAJIQ_VOILA_MODULIZE'
+                    || !(f[2] in ['SUCCESS', 'FAILED']))
+                    error "Malformed MAJIQ_VOILA_MODULIZE status for ${sample}: ${statusFile}"
+                if (f[2] == 'FAILED') {
+                    sampleStatusReporter.stageFailed(sample, 'MAJIQ_VOILA_MODULIZE', f[3])
+                    log.warn "SAMPLE_STAGE_FAILED sample=${sample} stage=MAJIQ_VOILA_MODULIZE exit=${f[3]}"
+                }
+                tuple(sample, f[2], 'MAJIQ_VOILA_MODULIZE')
+            }
+
         majiq_by_sample = MAJIQ_VOILA_MODULIZE.out.majiq_results
             .map { tool, sample, results -> tuple(sample, results) }
-        majiq_success = majiq_by_sample.map { sample, results ->
-            tuple(sample, 'SUCCESS', 'MAJIQ_VOILA_MODULIZE')
-        }
-        majiq_terminal = majiq_sj_failures.mix(majiq_success)
+        majiq_terminal = majiq_sj_failures
+            .mix(majiq_build_failures)
+            .mix(majiq_parallel_failures)
+            .mix(majiq_modulize_terminal)
 
         // Both analysis branches must have terminal outcomes. This join
         // intentionally contains statuses, not success-only directories.
