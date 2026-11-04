@@ -1,3 +1,54 @@
+## Development: v2.3 MAJIQ intermediate-failure recovery
+
+**Branch:** `splicescape-v2.3` (do not test development code in
+the released v2.2 checkout). The validated v2.2 database schema, parsers,
+vectorized PSI calculations and importer were not modified.
+
+New behavior:
+
+- `MAJIQ_BUILD`, `MAJIQ_PSI`, `MAJIQ_SG_COVERAGE` and
+  `MAJIQ_VOILA_MODULIZE` emit status TSVs on normal tool failures,
+  and omit their downstream success markers on failure.
+- `MAJIQ_PSI` and `MAJIQ_SG_COVERAGE` run concurrently. Their
+  statuses are joined, producing **one** failed MAJIQ branch outcome
+  even if both fail for the same sample.
+- Every admitted sample that reaches MAJIQ_SJ should therefore produce
+  exactly one terminal MAJIQ status at SJ, BUILD, parallel PSI/SG_COVERAGE,
+  or Modulize.
+- Tool exit code 0 with an incomplete SGSeq or Modulize TSV set is
+  recorded as sample failure, not a Nextflow missing-output exception.
+- A failed MAJIQ branch and successful SGSeq branch still complete the
+  sample-level terminal join; the unsuccessful sample is excluded from
+  `POPULATE_DB_BATCH`. All other samples continue.
+- `sample_status.txt` records failed stage(s) and their exit code(s).
+
+Run the synthetic *Nextflow channel topology* test:
+
+```bash
+nextflow run reads_processing/tests/test_majiq_failure_channels.nf
+```
+
+Expected: `PASS: 7 unique MAJIQ terminal outcomes`.
+
+This test does not execute the real MAJIQ tools or test SGE submission.
+A full v2.3 SGE integration run remains **required** before release.
+Use fresh `outdir` and `db` paths and retain work directories
+for `-resume`. Begin with two known-good samples and verify
+`BATCH_IMPORT_COMPLETE success=2 failed=0` and
+`validate_batch_database.py` passing. Then deliberately trigger
+each intermediate MAJIQ failure in an isolated, controlled test
+(e.g. a per-sample wrapper that returns a known nonzero exit code for
+one specified tool stage while delegating all other calls to the genuine
+binary). Verify other samples finish and the database contains no
+observations for the failed accession.
+
+**Important limits:** A process being killed before its status TSV can be
+written, failures of common reference/setup tasks, cluster outages,
+and abrupt Nextflow termination are not covered by the new status
+wrappers. The admission semaphore is unchanged and still deserves
+separate concurrency/deadlock testing. The v2.2 `main` release remains
+unchanged.
+
 # SpliceScape v2.2 — end-of-batch database import and comparison
 
 ## Design
