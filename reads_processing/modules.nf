@@ -715,6 +715,7 @@ process POPULATE_DB{
 // Last stage of a sample lifecycle. Runs after both analyses and DB import.
 // Intermediate BAM removal is deliberately delayed until both branches end.
 process FINALIZE_SAMPLE {
+    cache false // External database contents can change between resumed runs.
     tag "batch"
     errorStrategy 'terminate'
     maxForks 1
@@ -768,6 +769,7 @@ process FINALIZE_SAMPLE {
 
 /* Batch-level SQLite writer. All paired analysis results are collected first. */
 process POPULATE_DB_BATCH {
+    cache false // External database contents can change between resumed runs.
     tag "batch"
     errorStrategy 'terminate'
     maxForks 1
