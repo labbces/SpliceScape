@@ -1,10 +1,10 @@
 # SpliceScape
 
-**Version 2.1**
+**Development branch: v2.3** (v2.2 remains the released baseline)
 
 SpliceScape is a Nextflow pipeline for large-scale identification, quantification, and characterization of alternative splicing events from paired-end RNA-seq data.
 
-The workflow integrates **BBDuk** (read cleaning), **STAR** (splice-aware alignment), **SGSeq** and **MAJIQ v3 / VOILA** (splicing analysis), and **SQLite** (integrated results and sample-level quality-control statistics). SpliceScape supports configurable concurrency and sample-level recovery for selected processing failures.
+The workflow integrates **BBDuk** (read cleaning), **STAR** (splice-aware alignment), **SGSeq** and **MAJIQ v3 / VOILA** (splicing analysis), and **SQLite** (integrated results and sample-level quality-control statistics). SpliceScape supports configurable concurrency, sample-level failure recovery, and database-backed tracking of completed and failed sample accessions.
 
 ![SpliceScape workflow](images/GeneralViewPipeline.png)
 
@@ -84,7 +84,7 @@ For background on reference-file preparation, see the [SpliceScape Wiki](https:/
 
 ## 3. JSON configuration
 
-SpliceScape v2.1 uses two complementary configurations:
+SpliceScape uses two complementary configurations:
 
 - A **JSON file** supplies sample inputs, reference paths, biological parameters, output locations, cleanup options, credentials, and concurrency.
 - [`reads_processing/splicescape-v2.config`](reads_processing/splicescape-v2.config) defines Nextflow executor profiles and CPU/memory allocations. Adjust its SGE queue and resources for your installation.
@@ -147,7 +147,7 @@ Create a JSON file, for example `splicescape.json`:
 | `genomeGFF` | Path to uncompressed reference annotation. |
 | `outdir` | Main directory for outputs and intermediate files. |
 | `backbonedir` | Directory for shared reference resources such as the STAR index. |
-| `db` | SQLite database path. |
+| `db` | Persistent SQLite database path. Existing database records are retained; previously processed accessions are skipped by the preflight check. |
 
 ### 3.2 Concurrency and processing resources
 
@@ -158,7 +158,7 @@ Create a JSON file, for example `splicescape.json`:
 | `sgseq_cores` | Core-count argument for SGSeq. |
 | `majiq_cores` | Core-count argument for MAJIQ/VOILA stages. |
 
-For example, `"max_active_samples": 3` allows at most three concurrently admitted samples. When a sample finishes or reaches a **supported** terminal failure state, its slot is returned and another sample may start. Actual task scheduling is also limited by the execution profile and available cluster resources.
+For example, `"max_active_samples": 3` allows at most three concurrently admitted samples. When a sample finishes its analysis or reaches a handled terminal failure state, its slot is returned and another sample may start. Actual task scheduling is also limited by the execution profile and available cluster resources.
 
 ### 3.3 BBDuk parameters
 
@@ -229,6 +229,29 @@ python3 reads_processing/run_splicescape.py \
 
 **Resume caveat:** Some intermediate files are kept outside the Nextflow work directories and may have been removed by cleanup options. Verify that required external artifacts are still present before resuming. For an independent validation run, use a fresh output directory without `--resume`.
 
+### 4.4 Automatic skipping of previously processed samples (v2.3)
+
+Before admitting samples for processing, SpliceScape checks the configured SQLite database (`db`). If the database contains the `sample_processing_status` table, accessions already registered as either **`SUCCESS` or `FAILED`** for the configured reference (`species`, used as `genome_version`) are **skipped automatically**. This includes failed samples: they are not retried automatically just because they previously failed.
+
+The behavior is:
+
+- **Database absent:** all identifiers in the manifest are eligible.
+- **Database present, status table absent:** all identifiers are eligible; the table is created during database preparation. Existing biological observations are *not* automatically assigned historical statuses.
+- **Database and table present:** identifiers with either terminal status are skipped; only new accessions are admitted.
+- **Interrupted sample without a terminal database record:** eligible for another attempt.
+
+The unique status key is `(sample_id, genome_version)`: an accession processed with one reference can be processed with another reference. The pipeline writes `sample_preflight.tsv` (PROCESS/SKIP for every manifest identifier) and `eligible_samples.txt` in `outdir`.
+
+For example, a manifest of five identifiers with four already registered produces:
+
+```text
+PREFLIGHT total=5 skipped=4 eligible=1
+```
+
+The database acts as the durable processing record even if Nextflow's `.nextflow` history and `work/` cache have been deleted. The remaining new sample must still run its analysis normally. The existing biological observations are retained in the database, and the new sample results are imported incrementally.
+
+**Important:** Do not run two SpliceScape instances against the same SQLite database concurrently. The current preflight and finalization mechanism does not provide multi-writer coordination. Use a database backup before migrating valuable databases.
+
 ## 5. Results and QC statistics
 
 SpliceScape writes BBDuk preprocessing outputs, STAR mapping outputs, SGSeq and MAJIQ results, and an integrated SQLite database.
@@ -244,11 +267,59 @@ ORDER BY tool, metric;
 
 QC metrics are stored using an idempotent UPSERT keyed by sample accession, genome version, tool, and metric. Re-importing the same metrics updates existing rows without duplicating them.
 
+### 5.1 Persistent sample status and failure reasons (v2.3)
+
+The SQLite `sample_processing_status` table stores the terminal outcome of each attempted sample. These records are inserted or updated **within the batch-level `FINALIZE_SAMPLE` process**, after analysis and import. The `POPULATE_DB_BATCH` process adds biological observations to a temporary database snapshot; `FINALIZE_SAMPLE` commits the sample statuses and publishes the updated database.
+
+| Column | Meaning |
+|---|---|
+| `sample_id` | Sample accession |
+| `genome_version` | Reference genome identifier |
+| `status` | Terminal outcome: `SUCCESS` or `FAILED` |
+| `failed_stage` | Failing pipeline stage(s), separated by semicolons when applicable |
+| `exit_code` | Exit code(s) for failed stages |
+| `reason` | Human-readable failure explanation |
+| `updated_at` | Timestamp of last status update |
+
+To examine sample processing history:
+
+```bash
+sqlite3 /path/to/splicescape.sqlite \
+  "SELECT sample_id, genome_version, status, failed_stage, exit_code, reason, updated_at
+   FROM sample_processing_status
+   ORDER BY genome_version, sample_id;"
+```
+
+To list only failed samples:
+
+```sql
+SELECT sample_id, genome_version, failed_stage, exit_code, reason
+FROM sample_processing_status
+WHERE status = 'FAILED'
+ORDER BY updated_at DESC;
+```
+
+Example for a sample that fails in two parallel MAJIQ stages:
+
+```text
+sample_id:     SRR26589537
+status:        FAILED
+failed_stage:  MAJIQ_PSI;MAJIQ_SG_COVERAGE
+exit_code:     97;97
+reason:        MAJIQ_PSI(exit=97);MAJIQ_SG_COVERAGE(exit=97)
+```
+
+Here `97` is the deliberate failure-injection exit code used for testing, not a normal MAJIQ error code. To retry a terminally failed sample, its status must first be explicitly cleared under a controlled retry procedure; simply including the accession in a later manifest will **not** rerun it. Do not delete status records casually if the sample has associated biological observations.
+
+The run-specific `sample_status.txt` reports the outcomes of **eligible samples in that run**, whereas `sample_processing_status` maintains the persistent history across runs.
+
 ## 6. Failure handling and known limitations
 
-Version 2.1 has sample-level failure detection for `WGET_DOWNLOADER`, `ALTERNATIVE_RUN_BBDUK`, `MAPPING_STAR`, `SGSEQ`, and `MAJIQ_SJ`. A supported sample failure is recorded without necessarily aborting the remaining batch.
+The v2.3 development branch has sample-level failure reporting for `WGET_DOWNLOADER`, `ALTERNATIVE_RUN_BBDUK`, `MAPPING_STAR`, `SGSEQ`, `MAJIQ_SJ`, `MAJIQ_BUILD`, `MAJIQ_PSI`, `MAJIQ_SG_COVERAGE`, and `MAJIQ_VOILA_MODULIZE`. A failed stage records its exit code and reason; the affected sample is excluded from biological import while other samples continue.
 
-Recovery for later MAJIQ stages, `POPULATE_DB`, `FINALIZE_SAMPLE`, scheduler-level failures, and some resume scenarios is **not yet implemented**. See [`reads_processing/TODO.md`](reads_processing/TODO.md).
+Controlled SGE failure-injection tests validated the four intermediate MAJIQ stages (including simultaneous PSI and SG coverage failures). Subsequent database tests validated persistent status records, database-based skipping after removing Nextflow caches, and incremental import with zero cross-sample summary mismatches across 129,603 junction summary rows.
+
+These results do not establish recovery from abrupt process termination before a status file is written, scheduler-level failures, shared reference-step errors, or failures in `POPULATE_DB_BATCH` / `FINALIZE_SAMPLE` themselves. The current admission semaphore is still blocking and requires redesign. See [`reads_processing/TODO.md`](reads_processing/TODO.md).
 
 ## 7. Documentation
 
