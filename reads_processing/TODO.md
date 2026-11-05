@@ -9,10 +9,20 @@ Deferred by decision on 2026-11-02 (before v2.1 release):
 - [x] Check existing database before admission, skipping identifiers with terminal SUCCESS or FAILED status for the current genome version.
 - [x] Append new sample observations to the existing SQLite database while retaining previous results; cross-sample summary validation passed after incremental import of an additional successful accession (129,603 junction summaries; zero mismatches).
 
+## Production hardening underway (not yet production validated)
+
+- [x] Add run-scoped, atomic per-sample terminal journals under `outdir/run_journals/`; preserve ANALYSIS_COMPLETE across interrupted finalization.
+- [x] Add a read-only `bin/inspect_run_journals.py` report to identify analysis-completed samples not yet registered in SQLite. This does NOT import or automatically restore biological observations.
+- [x] Add advisory `flock` over the entire launcher lifecycle in `run_splicescape.py`, preventing overlapping cooperating runs writing the same database. Direct `nextflow run` bypasses this guard.
+- [x] Add test-only fault injection just before database replacement and regression tests for preservation of existing DB state.
+- [ ] Execute new Python safety tests and Nextflow journal test on Nextflow 25.04.8/SGE before considering the new safeguards validated.
+- [ ] Replace single end-of-run import with bounded streaming micro-batches and a single serialized transaction writer. Avoid cloning the entire SQLite file for every micro-batch, and verify summary equivalence.
+- [ ] Test locking behavior on the actual shared filesystem and validate failure recovery with representative biological samples.
+
 ## Remaining work
 
 - [ ] Handle errors in POPULATE_DB and FINALIZE_SAMPLE without stranding admission slots. Track database import failure separately from analysis failure.
-- [ ] Validate nonblocking sample admission on Nextflow 25.04.8 and SGE, including mixed early/MAJIQ failures, no terminal duplication, and empty eligible manifests. The controller and synthetic test are implemented in v2.3, but integration testing is pending.
+- [x] Validate nonblocking admission on Nextflow 25.04.8 and SGE: 7 eligible (5 successes, 2 WGET failures), 2 active slots, all terminal outcomes, SQLite 7 SUCCESS/5 FAILED; validator checked 147,417 junction summaries with zero mismatches. Synthetic empty-manifest and duplicate-terminal tests also pass. A full SGE empty-manifest test remains optional.
 - [ ] Improve -resume consistency: success markers should not be cached independently of external FASTQ/BAM artifacts that cleanup can delete.
 - [ ] Handle scheduler-level kills, missing status outputs, duplicate terminal events and retry policies.
 - [ ] Add regression tests for remaining unhandled failures (import/finalization, scheduler-level kills, missing status outputs, interrupted processes, retry policies and cache/resume edge cases).
