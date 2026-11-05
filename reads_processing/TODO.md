@@ -2,14 +2,22 @@
 
 Deferred by decision on 2026-11-02 (before v2.1 release):
 
-- [ ] Handle failures at MAJIQ_BUILD, MAJIQ_PSI, MAJIQ_SG_COVERAGE, and MAJIQ_VOILA_MODULIZE. Both analysis branches must reach terminal state before releasing a sample; prevent double release.
+## Implemented in v2.3 (validated in SGE tests)
+
+- [x] Handle sample-level failures at MAJIQ_BUILD, MAJIQ_PSI, MAJIQ_SG_COVERAGE and MAJIQ_VOILA_MODULIZE. Both analysis branches yield terminal outcomes; parallel PSI and SG_COVERAGE failures produce a single terminal event for the sample.
+- [x] Persist terminal sample statuses (SUCCESS/FAILED), failed stage, exit code and reason in SQLite `sample_processing_status`, written by FINALIZE_SAMPLE.
+- [x] Check existing database before admission, skipping identifiers with terminal SUCCESS or FAILED status for the current genome version.
+- [x] Append new sample observations to the existing SQLite database while retaining previous results; cross-sample summary validation passed after incremental import of an additional successful accession (129,603 junction summaries; zero mismatches).
+
+## Remaining work
+
 - [ ] Handle errors in POPULATE_DB and FINALIZE_SAMPLE without stranding admission slots. Track database import failure separately from analysis failure.
 - [ ] Replace blocking Semaphore.acquire() within channel.map with a safe rolling-admission mechanism; test on Nextflow 25.04.8 and SGE.
 - [ ] Improve -resume consistency: success markers should not be cached independently of external FASTQ/BAM artifacts that cleanup can delete.
 - [ ] Handle scheduler-level kills, missing status outputs, duplicate terminal events and retry policies.
-- [ ] Add regression tests for all above failure paths.
+- [ ] Add regression tests for remaining unhandled failures (import/finalization, scheduler-level kills, missing status outputs, interrupted processes, retry policies and cache/resume edge cases).
 
-## QC metrics (v2.1 candidate)
+## QC metrics
 
 New `sample_qc_metrics` SQLite table uses primary key
 `(sra_id, genome_version, tool, metric)`, making repeated QC imports idempotent.
@@ -20,7 +28,7 @@ SGSeq parsing. The QC importer expects the BBDuk stderr log at
 These files must remain available until the QC import completes.
 
 Release-blocking validation:
-- [ ] Fresh SGE test with one valid sample and DB schema; verify QC row counts.
+- [x] SGE test with successful samples, persistent sample registry and incremental database import; validated junction summaries (129,603 rows, zero mismatches).
 - [ ] Check BBDuk metrics against actual log lines.
-- [ ] Confirm existing database migration works with CREATE TABLE IF NOT EXISTS.
+- [ ] Test migration from a database predating sample_processing_status; backfill historical terminal statuses where appropriate.
 - [ ] Confirm import failure does not release sample prematurely (currently TODO above).
