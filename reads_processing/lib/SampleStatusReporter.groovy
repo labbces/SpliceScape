@@ -1,5 +1,9 @@
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
+import java.nio.channels.FileChannel
+import java.nio.file.StandardOpenOption
+import java.time.Instant
+import java.util.UUID
 
 /**
  * Thread-safe, incremental sample status report.
@@ -11,8 +15,11 @@ import java.nio.file.StandardCopyOption
 class SampleStatusReporter {
     private final LinkedHashMap<String, Map> samples = new LinkedHashMap<>()
     private final File reportFile
+    final File journalDir
+    private final String genomeVersion
 
-    SampleStatusReporter(String readsFile, String outdir) {
+    SampleStatusReporter(String readsFile, String outdir, String genomeVersion = '') {
+        this.genomeVersion = genomeVersion
         def manifest = new File(readsFile)
         if (!manifest.isFile()) {
             throw new IllegalArgumentException("Sample manifest not found: ${readsFile}")
@@ -34,6 +41,17 @@ class SampleStatusReporter {
             throw new IOException("Cannot create output directory: ${outdir}")
         }
         reportFile = new File(dir, 'sample_status.txt')
+        // Distinct journals allow recovery inspection across interrupted runs.
+        def journalRoot = new File(dir, 'run_journals')
+        if (!journalRoot.isDirectory() && !journalRoot.mkdirs())
+            throw new IOException("Cannot create run_journals directory")
+        journalDir = new File(journalRoot,
+            Instant.now().toString().replace(':', '-') + '-' + UUID.randomUUID().toString())
+        if (!journalDir.mkdir())
+            throw new IOException("Cannot create run journal directory")
+        writeAtomic(new File(journalDir, 'run.tsv'),
+            'genome_version\tcreated_at\n' + clean(genomeVersion) + '\t' +
+            Instant.now().toString() + '\n')
         persist()
     }
 
@@ -109,8 +127,43 @@ class SampleStatusReporter {
         persist()
     }
 
+    private static void writeAtomic(File destination, String contents) {
+        def parent = destination.toPath().parent
+        def tmp = Files.createTempFile(parent, '.splicescape-journal-', '.tmp')
+        try {
+            byte[] bytes = contents.getBytes('UTF-8')
+            FileChannel channel = FileChannel.open(tmp,
+                StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING)
+            try {
+                channel.write(java.nio.ByteBuffer.wrap(bytes))
+                channel.force(true)
+            } finally {
+                channel.close()
+            }
+            try {
+                Files.move(tmp, destination.toPath(),
+                    StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+            } catch (java.nio.file.AtomicMoveNotSupportedException ignored) {
+                Files.move(tmp, destination.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            }
+        } finally {
+            Files.deleteIfExists(tmp)
+        }
+    }
+
+    private void record(String sample, Map row) {
+        if (!(sample ==~ /[A-Za-z0-9_.-]+/))
+            throw new IllegalArgumentException("Unsafe sample ID for journal: " + sample)
+        def fields = [sample, genomeVersion, row.status, row.failedStage,
+                      row.exitCode, row.reason].collect { clean(it) }
+        writeAtomic(new File(journalDir, sample + '.tsv'),
+            'sample_id\tgenome_version\tstatus\tfailed_stage\texit_code\treason\n' +
+            fields.join('\t') + '\n')
+    }
+
     private void persist() {
         def lines = ['sample_id\tstatus\tfailed_stage\texit_code\treason']
+        samples.each { sample, row -> record(sample, row) }
         samples.each { sample, row ->
             lines << [sample, row.status, row.failedStage, row.exitCode, row.reason]
                 .collect { clean(it) }.join('\t')
