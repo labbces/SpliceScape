@@ -68,7 +68,7 @@ def preflightLog = preflightProcess.inputStream.getText("UTF-8")
 if (preflightProcess.waitFor() != 0) error "Sample preflight failed: ${preflightLog}"
 log.info preflightLog.trim()
 // The status reporter must only track admitted/eligible samples, not skipped IDs.
-def sampleStatusReporter = new SampleStatusReporter(eligibleManifest, params.outdir.toString())
+def sampleStatusReporter = new SampleStatusReporter(eligibleManifest, params.outdir.toString(), params.species.toString())
 workflow.onComplete {
     sampleStatusReporter.completeReport()
 }
