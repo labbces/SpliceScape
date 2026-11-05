@@ -71,7 +71,7 @@ class SampleStatusReporter {
         def row = requireSample(sample)
         if (row.status == 'PENDING') {
             row.status = 'RUNNING'
-            persist()
+            persist(sample)
         }
     }
 
@@ -82,14 +82,14 @@ class SampleStatusReporter {
         row.failedStage = row.failures.keySet().join(';')
         row.exitCode = row.failures.values().join(';')
         row.reason = row.failures.collect { k, v -> "${k}(exit=${v})" }.join(';')
-        persist()
+        persist(sample)
     }
 
     synchronized void analysisComplete(String sample) {
         def row = requireSample(sample)
         if (row.status == 'RUNNING') {
             row.status = 'ANALYSIS_COMPLETE'
-            persist()
+            persist(sample)
         }
     }
 
@@ -100,7 +100,7 @@ class SampleStatusReporter {
         if (!row.failures) {
             row.reason = 'TERMINAL_FAILURE_WITHOUT_STAGE_DETAIL'
         }
-        persist()
+        persist(sample)
     }
 
     synchronized void succeeded(String sample) {
@@ -110,7 +110,7 @@ class SampleStatusReporter {
         row.failedStage = ''
         row.exitCode = ''
         row.reason = ''
-        persist()
+        persist(sample)
     }
 
     synchronized void completeReport() {
@@ -161,9 +161,13 @@ class SampleStatusReporter {
             fields.join('\t') + '\n')
     }
 
-    private void persist() {
+    private void persist(String changedSample = null) {
         def lines = ['sample_id\tstatus\tfailed_stage\texit_code\treason']
-        samples.each { sample, row -> record(sample, row) }
+        if (changedSample != null) {
+            record(changedSample, requireSample(changedSample))
+        } else {
+            samples.each { sample, row -> record(sample, row) }
+        }
         samples.each { sample, row ->
             lines << [sample, row.status, row.failedStage, row.exitCode, row.reason]
                 .collect { clean(it) }.join('\t')
