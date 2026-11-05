@@ -1,5 +1,6 @@
 #!/usr/bin/env nextflow
 import SampleStatusReporter
+import SampleAdmissionController
 nextflow.enable.dsl = 2
 
 // version 1.5.0
@@ -108,23 +109,20 @@ workflow {
         
         genome_index_ch = GENOME_GENERATE_STAR.out.genome_index_dir.first()
         
-        // Channel with read IDs
-        // A permit is acquired before admitting a sample to download.
-        // The permit is released only after its complete lifecycle.
-        // Admission happens on the Nextflow runtime, not in an SGE job.
+        // Admission does not block Nextflow dataflow/operator threads.
+        // The controller emits up to max_active_samples, and adds exactly one
+        // replacement when an admitted sample reaches a terminal analysis
+        // outcome. It emits Channel.STOP once ALL admitted samples finish.
         def maximum = (params.max_active_samples ?: 2) as int
-        if (maximum < 1) error 'max_active_samples must be >= 1'
-        def admissionSlots = new java.util.concurrent.Semaphore(maximum, true)
-
-        sra_id = channel.fromPath(eligibleManifest).splitText()
-            .map { line -> line.trim() }
-            .filter { line -> !line.isEmpty() }
-            .map { sample ->
-                admissionSlots.acquire()
+        def eligibleIds = new File(eligibleManifest).readLines('UTF-8')
+            .collect { it.trim() }.findAll { it }
+        def admissionController = new SampleAdmissionController(
+            eligibleIds, maximum, { sample ->
                 sampleStatusReporter.admitted(sample)
                 log.info "Admitted sample: ${sample}"
-                sample
             }
+        )
+        sra_id = admissionController.channel
 
         // Downloading reads from FTP
         // GET_READ_FTP ( sra_id, params.outdir )
@@ -484,5 +482,9 @@ workflow {
                 sampleStatusReporter.succeeded(sample)
                 log.info "Completed sample: ${sample}"
             }
+
+        // Start only after all downstream consumers and terminal subscriptions
+        // have been wired, including the end-of-batch database barrier.
+        admissionController.start()
 
 }
