@@ -32,6 +32,8 @@ def main():
     ap.add_argument("--scratch-dir", required=True)
     ap.add_argument("--cleanup-bams", action="store_true")
     ap.add_argument("--completed", default="finalized_samples.tsv")
+    ap.add_argument("--test-fail-before-replace", action="store_true",
+                    help="TEST ONLY: abort before modifying persistent SQLite")
     a = ap.parse_args()
 
     eligible = [line.strip() for line in Path(a.eligible_manifest).read_text().splitlines()
@@ -108,6 +110,8 @@ def main():
         os.close(fd)
         try:
             shutil.copy2(local_db, staged)
+            if a.test_fail_before_replace:
+                raise RuntimeError('TEST_INJECTED_FAILURE_BEFORE_DB_REPLACE')
             os.replace(staged, destination)
         finally:
             if os.path.exists(staged):
