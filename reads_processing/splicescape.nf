@@ -195,7 +195,7 @@ workflow {
             sampleStatusReporter.failed(sample)
             log.warn "SAMPLE_STAGE_FAILED sample=${sample} stage=${stage} exit=${exitCode}"
             log.warn "SAMPLE_TERMINAL sample=${sample} status=FAILED stage=${stage}"
-            admissionSlots.release()
+            admissionController.terminal(sample)
         }
 
         // Splicing analysis
@@ -379,10 +379,10 @@ workflow {
                 log.warn "SAMPLE_TERMINAL sample=${sample} status=FAILED sgseq=${sgseqStatus} majiq=${majiqStatus} stage=${majiqStage}"
                 // Release only after BOTH analysis branches have ended.
                 // No DB import is attempted for unsuccessful samples.
-                admissionSlots.release()
+                admissionController.terminal(sample)
             } else {
                 sampleStatusReporter.analysisComplete(sample)
-                admissionSlots.release()
+                admissionController.terminal(sample)
                 log.info "SAMPLE_ANALYSIS_COMPLETE sample=${sample} status=SUCCESS"
             }
         }
