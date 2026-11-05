@@ -378,3 +378,43 @@ at the end of a run. These journals are a recovery *audit trail*, not a
 persistent work queue with automatic re-import. Streaming micro-batch
 imports, crash-safe transaction boundaries for existing parsers, and
 production-scale performance benchmarks remain to be implemented and tested.
+
+
+### Experimental offline micro-batch SQLite merger (not production enabled)
+
+\`reads_processing/bin/incremental_sqlite_writer.py\` is an **isolated
+prototype**, not connected to the Nextflow workflow. The existing
+\`POPULATE_DB_BATCH\` and \`FINALIZE_SAMPLE\` processes remain the default.
+Its purpose is to test transaction boundaries, re-import protection,
+sample-specific QC and junction aggregates before changing scheduling.
+
+It accepts a TSV with \`sample_id\` and \`stage_db\` columns, each \`stage_db\`
+being an independently prepared **one-sample** SQLite database containing
+MAJIQ, SGSeq and QC results. Staging DBs must not contain previous or other
+samples, and the merger must only target a disposable **copy** of a database
+on reliable local storage. Its command requires an explicit experimental
+flag:
+
+\`\`\`bash
+python3 reads_processing/bin/incremental_sqlite_writer.py \
+  --experimental \
+  --db /local/scratch/test_copy.sqlite \
+  --genome-version Athaliana_447 \
+  --manifest /local/scratch/staging_manifest.tsv \
+  --batch-size 20
+\`\`\`
+
+Run the synthetic rollback/aggregate/duplicate tests first:
+
+\`\`\`bash
+python3 -m unittest discover -s reads_processing/tests \
+  -p 'test_incremental_sqlite_writer.py'
+\`\`\`
+
+**Do not use this prototype on the production database.** Transaction
+correctness, results-equivalence with the original parser, global event
+annotation handling, shared-filesystem behavior, and the creation of
+single-sample staging DBs from live pipeline outputs have not yet been
+validated. The prototype commits each micro-batch atomically but does not
+yet implement durable work-queue ingestion, failed-sample record commits,
+or streaming Nextflow admission/import coordination.
