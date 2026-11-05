@@ -12,7 +12,7 @@ Deferred by decision on 2026-11-02 (before v2.1 release):
 ## Remaining work
 
 - [ ] Handle errors in POPULATE_DB and FINALIZE_SAMPLE without stranding admission slots. Track database import failure separately from analysis failure.
-- [ ] Replace blocking Semaphore.acquire() within channel.map with a safe rolling-admission mechanism; test on Nextflow 25.04.8 and SGE.
+- [ ] Validate nonblocking sample admission on Nextflow 25.04.8 and SGE, including mixed early/MAJIQ failures, no terminal duplication, and empty eligible manifests. The controller and synthetic test are implemented in v2.3, but integration testing is pending.
 - [ ] Improve -resume consistency: success markers should not be cached independently of external FASTQ/BAM artifacts that cleanup can delete.
 - [ ] Handle scheduler-level kills, missing status outputs, duplicate terminal events and retry policies.
 - [ ] Add regression tests for remaining unhandled failures (import/finalization, scheduler-level kills, missing status outputs, interrupted processes, retry policies and cache/resume edge cases).
