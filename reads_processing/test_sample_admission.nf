@@ -52,11 +52,17 @@ workflow {
     def empty = new SampleAdmissionController([], 3, { sample ->
         assert false : 'Unexpected sample admitted in empty test'
     })
-    empty.channel.collect(flat: false).view { records ->
-        assert records.isEmpty()
-        assert empty.closed && empty.peakActive == 0
-        'PASS: zero eligible samples, channel closes cleanly'
-    }
+    // collect() on an empty channel can produce no value; ifEmpty()
+    // makes channel closure observable and the assertion mandatory.
+    empty.channel
+        .ifEmpty { 'EMPTY_CHANNEL_CLOSED' }
+        .view { marker ->
+            assert marker == 'EMPTY_CHANNEL_CLOSED' :
+                "Unexpected value emitted by empty admission channel: ${marker}"
+            assert empty.closed && empty.peakActive == 0
+            assert empty.activeCount == 0 && empty.completedCount == 0
+            'PASS: zero eligible samples, channel closes cleanly'
+        }
     empty.start()
 
     def serial = new SampleAdmissionController(['ONE','TWO','THREE'], 1, { sample -> })
