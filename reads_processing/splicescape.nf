@@ -61,7 +61,8 @@ def preflightCmd = ["python3", "${projectDir}/bin/sample_registry.py",
     "--db", params.db.toString(),
     "--genome-version", params.species.toString(),
     "--eligible", eligibleManifest, "--report", preflightReport]
-def preflightProcess = new ProcessBuilder(preflightCmd).redirectErrorStream(true).start()
+def preflightProcess = new ProcessBuilder(preflightCmd.collect { it.toString() })
+    .redirectErrorStream(true).start()
 def preflightLog = preflightProcess.inputStream.getText("UTF-8")
 if (preflightProcess.waitFor() != 0) error "Sample preflight failed: ${preflightLog}"
 log.info preflightLog.trim()
