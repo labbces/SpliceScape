@@ -158,7 +158,7 @@ Create a JSON file, for example `splicescape.json`:
 | `sgseq_cores` | Core-count argument for SGSeq. |
 | `majiq_cores` | Core-count argument for MAJIQ/VOILA stages. |
 
-For example, `"max_active_samples": 3` allows at most three concurrently admitted samples. When a sample finishes its analysis or reaches a handled terminal failure state, its slot is returned and another sample may start. Actual task scheduling is also limited by the execution profile and available cluster resources.
+For example, `"max_active_samples": 3` allows at most three concurrently admitted samples. In the v2.3 development branch, a bounded **nonblocking admission controller** supplies the first available samples and emits one replacement after each terminal analysis outcome (including handled failures). Unlike the previous implementation, no Nextflow dataflow thread waits in `Semaphore.acquire()`. The controller closes the sample channel after all eligible samples reach terminal outcomes. Actual task scheduling is also limited by the execution profile and cluster resources. **The new controller is not yet SGE-validated; see the TODO and run the synthetic test before integration testing.**
 
 ### 3.3 BBDuk parameters
 
@@ -229,7 +229,22 @@ python3 reads_processing/run_splicescape.py \
 
 **Resume caveat:** Some intermediate files are kept outside the Nextflow work directories and may have been removed by cleanup options. Verify that required external artifacts are still present before resuming. For an independent validation run, use a fresh output directory without `--resume`.
 
-### 4.4 Automatic skipping of previously processed samples (v2.3)
+### 4.4 Nonblocking admission controller (v2.3 development)
+
+Run the lightweight Nextflow scheduling regression before an SGE run:
+
+```bash
+nextflow run reads_processing/test_sample_admission.nf
+```
+
+The test covers five sample outcomes (two synthetic failures), a concurrency
+limit of two, exactly-once terminal notification, a single active sample, and
+an empty eligible manifest. It does not execute real SGE tasks or MAJIQ.
+After it passes, an SGE run with more samples than `max_active_samples`
+and mixed success/failure outcomes is required before considering the new
+scheduler validated.
+
+### 4.5 Automatic skipping of previously processed samples (v2.3)
 
 Before admitting samples for processing, SpliceScape checks the configured SQLite database (`db`). If the database contains the `sample_processing_status` table, accessions already registered as either **`SUCCESS` or `FAILED`** for the configured reference (`species`, used as `genome_version`) are **skipped automatically**. This includes failed samples: they are not retried automatically just because they previously failed.
 
