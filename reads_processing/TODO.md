@@ -15,9 +15,10 @@ Deferred by decision on 2026-11-02 (before v2.1 release):
 - [x] Add a read-only `bin/inspect_run_journals.py` report to identify analysis-completed samples not yet registered in SQLite. This does NOT import or automatically restore biological observations.
 - [x] Add advisory `flock` over the entire launcher lifecycle in `run_splicescape.py`, preventing overlapping cooperating runs writing the same database. Direct `nextflow run` bypasses this guard.
 - [x] Add test-only fault injection just before database replacement and regression tests for preservation of existing DB state.
-- [ ] Execute new Python safety tests and Nextflow journal test on Nextflow 25.04.8/SGE before considering the new safeguards validated.
-- [ ] Replace single end-of-run import with bounded streaming micro-batches and a single serialized transaction writer. Avoid cloning the entire SQLite file for every micro-batch, and verify summary equivalence.
-- [ ] Test locking behavior on the actual shared filesystem and validate failure recovery with representative biological samples.
+- [x] Execute Python safety tests (4/4 passed) and Nextflow journal test (PASS) on Nextflow 25.04.8; one new sample was also reconciled as REGISTERED after SGE processing.
+- [ ] Replace single end-of-run import with bounded streaming micro-batches and a single serialized transaction writer. An **offline, opt-in experimental** staging DB merger and synthetic rollback/equivalence tests are committed; tests have NOT been executed on the cluster; live Nextflow integration and scientific equivalence with MAJIQ/SGSeq real data remain unimplemented. Avoid cloning the entire SQLite file for every micro-batch.
+- [x] Same-host locking test with real database: second launcher refused; SHA-256 unchanged; integrity_check ok.
+- [ ] Test cross-host locking on actual shared filesystem and validate recovery with representative biological samples.
 
 ## Remaining work
 
