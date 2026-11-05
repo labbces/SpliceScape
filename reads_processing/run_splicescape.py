@@ -5,6 +5,7 @@ The optional JSON 'environment' object selects executables and a MAJIQ license
 for this run. It does not orchestrate sample processing.
 """
 import argparse
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -74,6 +75,16 @@ def main():
     if settings.get("environment", {}).get("conda_env") and not shutil.which("STAR", path=env["PATH"]):
         parser.error("STAR not found in configured PATH")
 
+    db_value = settings.get("db")
+    if not isinstance(db_value, str) or not db_value.strip():
+        parser.error("JSON must specify a non-empty 'db' path for run-wide locking")
+    db_path = Path(db_value).expanduser()
+    if not db_path.is_absolute():
+        db_path = params_path.parent / db_path
+    db_path = db_path.resolve()
+    if not db_path.parent.is_dir():
+        parser.error(f"Database parent directory does not exist: {db_path.parent}")
+
     cmd = [
         args.nextflow, "run", str(HERE / "splicescape.nf"),
         "-c", str(config_path), "-profile", args.profile,
@@ -82,8 +93,25 @@ def main():
     if args.resume:
         cmd.append("-resume")
     cmd.extend(extra)
-    print("Launching Nextflow with JSON-specified environment", flush=True)
-    return subprocess.run(cmd, cwd=HERE, env=env, check=False).returncode
+    # The whole preflight -> analysis -> import -> replacement lifecycle is
+    # protected, not just the final SQLite write. The lock file must persist.
+    # Advisory: launchers bypassing run_splicescape.py do not honor the lock.
+    lock_path = db_path.with_name(db_path.name + ".splicescape.lock")
+    try:
+        with lock_path.open("a+") as handle:
+            try:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                print(f"Database busy: another SpliceScape launcher holds {lock_path}",
+                      file=sys.stderr, flush=True)
+                return 73
+            print(f"Database run lock acquired: {lock_path}", flush=True)
+            print("Launching Nextflow with JSON-specified environment", flush=True)
+            return subprocess.run(cmd, cwd=HERE, env=env, check=False).returncode
+    except OSError as exc:
+        print(f"Cannot acquire database run lock {lock_path}: {exc}",
+              file=sys.stderr, flush=True)
+        return 73
 
 
 if __name__ == "__main__":
