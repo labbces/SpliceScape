@@ -341,3 +341,40 @@ These results do not establish recovery from abrupt process termination before a
 - [SpliceScape Wiki](https://github.com/labbces/SpliceScape/wiki)
 - [MAJIQ documentation](https://biociphers.bitbucket.io/majiq-docs/)
 - [MAJIQ download and licensing](https://majiq.biociphers.org/app_download/)
+
+
+### v2.3 production hardening (experimental; not a streaming importer yet)
+
+The Python launcher now acquires a nonblocking advisory lock next to the
+configured SQLite database (`<db>.splicescape.lock`) for the **entire**
+preflight, analysis and import lifecycle. Use
+`python3 reads_processing/run_splicescape.py --params-file ... -profile sge -resume`
+for coordinated runs. A second launcher targeting the same canonical database
+path exits with code 73. Do not delete the lock file while a run is active.
+A direct `nextflow run` bypasses this launcher guard; separate hosts must
+share correct filesystem advisory-lock semantics.
+
+Each run also writes a distinct per-sample status journal under
+`<outdir>/run_journals/<run-id>/`. A record with
+`ANALYSIS_COMPLETE` means both analytical branches finished; it **does not**
+mean the biological observations were imported. Database `SUCCESS` is
+recorded only during `FINALIZE_SAMPLE`. Inspect pending records without
+altering the database:
+
+```bash
+python3 reads_processing/bin/inspect_run_journals.py \
+  --outdir /path/to/results --db /path/to/results.sqlite
+```
+
+New safeguards can be tested independently of real data:
+
+```bash
+python3 -m unittest discover -s reads_processing/tests -p 'test_phase1_safety.py'
+nextflow run reads_processing/test_sample_journal.nf
+```
+
+**Important:** The current v2.3 workflow still imports and finalizes once
+at the end of a run. These journals are a recovery *audit trail*, not a
+persistent work queue with automatic re-import. Streaming micro-batch
+imports, crash-safe transaction boundaries for existing parsers, and
+production-scale performance benchmarks remain to be implemented and tested.
