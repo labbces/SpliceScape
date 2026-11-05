@@ -118,7 +118,7 @@ class SampleStatusReporter {
             if (row.status == 'PENDING') {
                 row.status = 'INCOMPLETE'
                 row.reason = 'NOT_ADMITTED_BEFORE_WORKFLOW_END'
-            } else if (row.status in ['RUNNING', 'ANALYSIS_COMPLETE']) {
+            } else if (row.status == 'RUNNING') {
                 row.status = 'INCOMPLETE'
                 row.reason = row.reason ?
                     "${row.reason};NO_TERMINAL_EVENT" : 'NO_TERMINAL_EVENT'
