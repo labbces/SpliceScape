@@ -19,7 +19,7 @@ Deferred by decision on 2026-11-02 (before v2.1 release):
 - [ ] Validate the new **opt-in** serialized Nextflow micro-batch path (`db_batch_size > 0`) on synthetic Nextflow and real SGE samples. It reuses the ORIGINAL `import_batch.py` and `finalize_samples.py` in one non-cacheable process with `maxForks=1`; the old end-of-run path remains default. No SGE or Nextflow runtime results for this path have yet been confirmed. Benchmark database cloning and per-sample checkpoints.
 - [ ] Retire or redesign the separate single-sample staging merger: real three-sample equivalence test failed (51 event annotations, 560 sample-observation rows, 7,013 summaries differ). Its internal aggregate validator passed, but it is NOT biologically equivalent to the original importer.
 - [x] Same-host locking test with real database: second launcher refused; SHA-256 unchanged; integrity_check ok.
-- [ ] Test cross-host locking on actual shared filesystem and validate recovery with representative biological samples.
+- [ ] Test cross-host locking on actual shared filesystem and validate recovery with representative biological samples. Gated one-shot `before_commit` and `after_commit` fault injection added to the opt-in microbatch process; recovery tests have not yet run on Nextflow/SGE.
 
 ## Remaining work
 
