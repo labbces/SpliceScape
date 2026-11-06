@@ -838,3 +838,110 @@ SPLICESCAPE_MANIFEST_END
     touch batch_db.ok
     """
 }
+
+
+/* Opt-in serialized database import and finalization. The original parsers
+ * are used without changes; the two phases MUST remain in the same process.
+ * cache=false prevents replay of an obsolete snapshot on -resume.
+ */
+process COMMIT_DB_MICROBATCH {
+    cache false
+    maxForks 1
+    tag "microbatch"
+    errorStrategy 'terminate'
+
+    input:
+    val batch_records
+    path genomeGFF_file
+    val species_code
+    val species_name
+    val outdir
+
+    output:
+    path("finalized_samples.tsv"), emit: completed
+    path("microbatch_import_status.tsv"), emit: import_status
+
+    script:
+    def condaEnv = params.environment?.conda_env
+    if (!condaEnv) error "COMMIT_DB_MICROBATCH requires environment.conda_env"
+    def pythonExe = new File(condaEnv.toString(), 'bin/python').absolutePath
+    def dbFileName = new File(params.db.toString()).name
+    if (!batch_records || !(batch_records instanceof List))
+        error "Microbatch requires a nonempty list of terminal records"
+    // Records: sample, status, failed_stage, exit_code, reason, MAJIQ dir, SGSeq dir.
+    def seenIds = new HashSet<String>()
+    def checked = batch_records.collect { rec ->
+        if (!(rec instanceof List) || rec.size() != 7)
+            error "Invalid microbatch terminal record: ${rec}"
+        def fields = rec.collect { it == null ? '' : it.toString() }
+        if (!(fields[0] ==~ /[A-Za-z0-9_.-]+/) || !seenIds.add(fields[0]))
+            error "Duplicate or unsafe microbatch sample ID: ${fields[0]}"
+        if (!(fields[1] in ['ANALYSIS_COMPLETE', 'FAILED']))
+            error "Invalid microbatch terminal status: ${fields[1]}"
+        if (fields.any { it.contains('\n') || it.contains('\r') || it.contains('\t') })
+            error "Unsafe newline/tab in microbatch terminal record"
+        if (fields[1] == 'ANALYSIS_COMPLETE' && (!fields[5] || !fields[6]))
+            error "Missing paired output directories for ${fields[0]}"
+        fields
+    }
+    def manifest = checked.findAll { it[1] == 'ANALYSIS_COMPLETE' }
+        .collect { [it[0], it[5], it[6]].join('\t') }.join('\n')
+    def statuses = checked.collect { [it[0], it[1], it[2], it[3], it[4]].join('\t') }
+        .join('\n')
+    def eligible = checked.collect { it[0] }.join('\n')
+    def scratchParam = params.local_db_scratch ?: ''
+    """
+    set -euo pipefail
+    test -x '${pythonExe}' || { echo 'Missing conda Python: ${pythonExe}' >&2; exit 2; }
+    cat > microbatch_manifest.tsv <<'SPLICESCAPE_MICROBATCH_MANIFEST'
+${manifest}
+SPLICESCAPE_MICROBATCH_MANIFEST
+    cat > microbatch_status_report.tsv <<'SPLICESCAPE_MICROBATCH_STATUS'
+sample_id\tstatus\tfailed_stage\texit_code\treason
+${statuses}
+SPLICESCAPE_MICROBATCH_STATUS
+    cat > microbatch_eligible.txt <<'SPLICESCAPE_MICROBATCH_ELIGIBLE'
+${eligible}
+SPLICESCAPE_MICROBATCH_ELIGIBLE
+
+    dbscratch='${scratchParam}'
+    if [ -z "\$dbscratch" ]; then dbscratch="\${TMPDIR:-}"; fi
+    if [ -z "\$dbscratch" ]; then
+        echo 'Set node-local local_db_scratch or TMPDIR' >&2; exit 2
+    fi
+    test -d "\$dbscratch" && test -w "\$dbscratch" || {
+        echo "Scratch directory is not writable: \$dbscratch" >&2; exit 2;
+    }
+    fstype=\$(stat -f -c %T "\$dbscratch")
+    case "\$fstype" in
+      nfs|nfs4|cifs|smb2|lustre|gpfs)
+        echo "Refusing SQLite scratch on shared filesystem: \$dbscratch (\$fstype)" >&2
+        exit 2 ;;
+    esac
+    '${pythonExe}' '${projectDir}/bin/import_batch.py' \\
+      --manifest microbatch_manifest.tsv \\
+      --ref-exons '${genomeGFF_file}' \\
+      --genome-version '${species_code}' \\
+      --species '${species_name}' \\
+      --existing-db '${params.db}' \\
+      --outdir '${outdir}' \\
+      --scratch-dir "\$dbscratch" \\
+      --destination '${dbFileName}' \\
+      --status microbatch_import_status.tsv
+
+    '${pythonExe}' '${projectDir}/bin/finalize_samples.py' \\
+      --input-db '${dbFileName}' \\
+      --destination '${params.db}' \\
+      --status-report microbatch_status_report.tsv \\
+      --import-status microbatch_import_status.tsv \\
+      --eligible-manifest microbatch_eligible.txt \\
+      --genome-version '${species_code}' \\
+      --outdir '${outdir}' \\
+      --species '${species_name}' \\
+      --scratch-dir "\$dbscratch" \\
+      ${params.rm_mapping_inspect_bamfiles ? "--cleanup-bams" : ""} \\
+      --completed finalized_samples.tsv
+
+    echo 'MICROBATCH_FINALIZED samples=${checked.size()}'
+    """
+}
