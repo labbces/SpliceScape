@@ -418,3 +418,44 @@ single-sample staging DBs from live pipeline outputs have not yet been
 validated. The prototype commits each micro-batch atomically but does not
 yet implement durable work-queue ingestion, failed-sample record commits,
 or streaming Nextflow admission/import coordination.
+
+### Opt-in serialized incremental database batches (experimental)
+
+The default workflow still imports at the **end of the full run**. To
+evaluate incremental committing without changing MAJIQ/SGSeq parser behavior,
+add these parameters to the JSON supplied to `run_splicescape.py`:
+
+```json
+{
+  "max_active_samples": 2,
+  "db_batch_size": 3
+}
+```
+
+`db_batch_size` is optional: omit it or set it to `0` for the previously
+validated end-of-run importer. With a positive value, Nextflow collects
+terminal samples (successful or failed) into groups of this size. A final
+incomplete group is retained. Successful samples are imported using the
+original `import_batch.py`; then the same serialized `COMMIT_DB_MICROBATCH`
+process runs `finalize_samples.py` to register all outcomes and atomically
+replace the persistent database. Only one writer process runs at a time.
+Analysis may overlap with this import process and remains bounded by
+`max_active_samples`.
+
+**Not yet validated on real SGE jobs.** Test on a disposable database and
+outdir, NOT the previously validated `test.sqlite`. The original importer
+still copies the accumulated DB to scratch and checkpoints it per sample,
+which may become an I/O bottleneck for thousands of samples.
+
+First run the synthetic Nextflow grouping smoke test:
+
+```bash
+nextflow run reads_processing/test_microbatch_channels.nf
+```
+
+Expected: `MICROBATCH_TEST_PASS batches=2 sizes=[1, 2]`.
+Then run a small new-sample dataset with `db_batch_size=2` and
+`max_active_samples=2` against an isolated database/outdir. Compare all
+biological tables with a baseline using the same sample order. Validate
+early-stage failures, MAJIQ/SGSeq failures, interrupted import, -resume,
+and filesystem locking before production use.
