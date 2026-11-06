@@ -23,6 +23,7 @@ include { MAJIQ_VOILA_MODULIZE       } from './modules.nf'
 include { CREATE_DB                  } from './modules.nf'
 include { POPULATE_DB_BATCH          } from './modules.nf'
 include { FINALIZE_SAMPLE             } from './modules.nf'
+include { COMMIT_DB_MICROBATCH       } from './modules.nf'
 
 
 // Explicit test-only failure injection. Disabled for ordinary runs.
@@ -406,6 +407,87 @@ workflow {
             failOnMismatch: false
         )
 
+        // OPT-IN streaming micro-batches. Analysis admission continues while a
+        // single committer imports and atomically finalizes completed groups.
+        // This branch uses the ORIGINAL MAJIQ and SGSeq parsers unchanged.
+        if (params.db_batch_size != null && (params.db_batch_size as int) > 0) {
+            def dbBatchSize = params.db_batch_size as int
+            log.info "INCREMENTAL_DB enabled db_batch_size=${dbBatchSize}"
+
+            // Successful samples must have terminal outcomes from BOTH
+            // biological branches AND the paired result directories.
+            micro_success = paired_results.join(
+                branch_terminal
+                    .filter { sample, sgState, mjState, stage ->
+                        sgState == 'SUCCESS' && mjState == 'SUCCESS'
+                    }
+                    .map { sample, sgState, mjState, stage ->
+                        tuple(sample, 'ANALYSIS_COMPLETE')
+                    },
+                by: 0, failOnDuplicate: true, failOnMismatch: true
+            )
+            .map { sample, majiqDir, sgseqDir, state ->
+                [sample, 'ANALYSIS_COMPLETE', '', '', '',
+                 majiqDir.toString(), sgseqDir.toString()]
+            }
+
+            // Early failures never produce paired directories. Biological
+            // branch failures are counted once after both branches terminate.
+            micro_failures = early_failures
+                .map { sample, stage, state, code ->
+                    [sample, 'FAILED', stage.toString(), code.toString(),
+                     "ANALYSIS_FAILED", '', '']
+                }
+                .mix(
+                    branch_terminal
+                        .filter { sample, sgState, mjState, stage ->
+                            sgState == 'FAILED' || mjState == 'FAILED'
+                        }
+                        .map { sample, sgState, mjState, stage ->
+                            def stages = (sgState == 'FAILED' ? 'SGSEQ;' : '') +
+                                (mjState == 'FAILED' ? stage.toString() : '')
+                            [sample, 'FAILED', stages, '',
+                             "ANALYSIS_FAILED", '', '']
+                        }
+                )
+
+            // collate(size) retains the final incomplete batch. The paired
+            // directories travel as absolute paths in val records, exactly as
+            // in the validated original batch importer.
+            microbatches = micro_success.mix(micro_failures)
+                .collate(dbBatchSize)
+
+            COMMIT_DB_MICROBATCH(
+                microbatches,
+                params.genomeGFF,
+                params.species,
+                params.species_name,
+                params.outdir
+            )
+
+            COMMIT_DB_MICROBATCH.out.completed
+                .flatMap { report ->
+                    report.text.readLines().drop(1).findAll { it.trim() }
+                        .collect { line -> line.split('\\t')[0] }
+                }
+                .subscribe { sample ->
+                    sampleStatusReporter.succeeded(sample)
+                    log.info "Completed sample: ${sample}"
+                }
+            COMMIT_DB_MICROBATCH.out.import_status
+                .flatMap { status ->
+                    status.text.readLines().drop(1).findAll { it.trim() }
+                        .collect { line -> line.split('\\t', -1) }
+                }
+                .subscribe { fields ->
+                    if (fields.size() == 4 && fields[1] == 'FAILED') {
+                        sampleStatusReporter.stageFailed(fields[0],
+                            'POPULATE_DB_' + fields[2], fields[3])
+                        sampleStatusReporter.failed(fields[0])
+                        log.warn "SAMPLE_IMPORT_FAILED sample=${fields[0]} reason=${fields[3]}"
+                    }
+                }
+        } else {
         // Batch barrier: this channel completes after all paired analyses have
         // produced their result directories. It emits exactly ONE list for
         // POPULATE_DB_BATCH (even if all samples failed analysis).
@@ -482,6 +564,8 @@ workflow {
                 sampleStatusReporter.succeeded(sample)
                 log.info "Completed sample: ${sample}"
             }
+
+        }
 
         // Start only after all downstream consumers and terminal subscriptions
         // have been wired, including the end-of-batch database barrier.
