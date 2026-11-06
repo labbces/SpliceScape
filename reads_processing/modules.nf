@@ -889,6 +889,20 @@ process COMMIT_DB_MICROBATCH {
     def statuses = checked.collect { [it[0], it[1], it[2], it[3], it[4]].join('\t') }
         .join('\n')
     def eligible = checked.collect { it[0] }.join('\n')
+    // Test-only one-shot interruption. Marker persists across -resume, so
+    // the same interruption is NOT injected again on recovery.
+    def recoveryMode = params.recovery_test_interrupt ?: 'none'
+    if (!(recoveryMode in ['none', 'before_commit', 'after_commit']))
+        error "recovery_test_interrupt must be none, before_commit or after_commit"
+    if (recoveryMode != 'none' && params.enable_recovery_test != true)
+        error "Refusing test interruption without enable_recovery_test=true"
+    def recoveryMarker = params.recovery_test_marker ?: ''
+    if (recoveryMode != 'none') {
+        if (!recoveryMarker || !new File(recoveryMarker.toString()).isAbsolute())
+            error "recovery_test_marker must be an absolute marker path"
+        if (!(new File(recoveryMarker.toString()).name ==~ /[A-Za-z0-9_.-]+/))
+            error "Unsafe recovery marker filename"
+    }
     def scratchParam = params.local_db_scratch ?: ''
     """
     set -euo pipefail
@@ -929,6 +943,15 @@ SPLICESCAPE_MICROBATCH_ELIGIBLE
       --destination '${dbFileName}' \\
       --status microbatch_import_status.tsv
 
+    # Test fault injection is intentionally BEFORE or AFTER atomic replacement.
+    # Atomic mkdir provides one-shot behavior across repeated Nextflow runs.
+    # Use only with a disposable database.
+    if [ '${recoveryMode}' = 'before_commit' ]; then
+        if mkdir '${recoveryMarker}' 2>/dev/null; then
+            echo 'SPLICESCAPE_TEST_INTERRUPT phase=before_commit' >&2
+            exit 97
+        fi
+    fi
     '${pythonExe}' '${projectDir}/bin/finalize_samples.py' \\
       --input-db '${dbFileName}' \\
       --destination '${params.db}' \\
@@ -942,6 +965,12 @@ SPLICESCAPE_MICROBATCH_ELIGIBLE
       ${params.rm_mapping_inspect_bamfiles ? "--cleanup-bams" : ""} \\
       --completed finalized_samples.tsv
 
+    if [ '${recoveryMode}' = 'after_commit' ]; then
+        if mkdir '${recoveryMarker}' 2>/dev/null; then
+            echo 'SPLICESCAPE_TEST_INTERRUPT phase=after_commit' >&2
+            exit 98
+        fi
+    fi
     echo 'MICROBATCH_FINALIZED samples=${checked.size()}'
     """
 }
