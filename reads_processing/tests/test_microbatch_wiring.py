@@ -33,6 +33,19 @@ class MicrobatchWiringTests(unittest.TestCase):
         self.assertLess(proc.index("bin/import_batch.py"), proc.index("bin/finalize_samples.py"))
         self.assertIn("--existing-db", proc)
 
+    def test_recovery_injection_is_gated_and_one_shot(self):
+        start = self.modules.index("process COMMIT_DB_MICROBATCH {")
+        proc = self.modules[start:]
+        self.assertIn("enable_recovery_test != true", proc)
+        self.assertIn("recovery_test_marker", proc)
+        self.assertIn("SPLICESCAPE_TEST_INTERRUPT phase=before_commit", proc)
+        self.assertIn("SPLICESCAPE_TEST_INTERRUPT phase=after_commit", proc)
+        self.assertIn("if mkdir", proc)
+        self.assertLess(proc.index("phase=before_commit"),
+                        proc.index("bin/finalize_samples.py"))
+        self.assertLess(proc.index("bin/finalize_samples.py"),
+                        proc.index("phase=after_commit"))
+
     def test_config_single_writer_is_explicit(self):
         self.assertEqual(self.config.count("withName: 'COMMIT_DB_MICROBATCH'"), 2)
         self.assertEqual(self.config.count("withName: 'COMMIT_DB_MICROBATCH' {\n        cpus = 8\n        memory = '24 GB'\n        maxForks = 1"), 2)
