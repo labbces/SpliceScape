@@ -16,7 +16,8 @@ Deferred by decision on 2026-11-02 (before v2.1 release):
 - [x] Add advisory `flock` over the entire launcher lifecycle in `run_splicescape.py`, preventing overlapping cooperating runs writing the same database. Direct `nextflow run` bypasses this guard.
 - [x] Add test-only fault injection just before database replacement and regression tests for preservation of existing DB state.
 - [x] Execute Python safety tests (4/4 passed) and Nextflow journal test (PASS) on Nextflow 25.04.8; one new sample was also reconciled as REGISTERED after SGE processing.
-- [ ] Replace single end-of-run import with bounded streaming micro-batches and a single serialized transaction writer. An **offline, opt-in experimental** staging DB merger and synthetic rollback/equivalence tests are committed; tests have NOT been executed on the cluster; live Nextflow integration and scientific equivalence with MAJIQ/SGSeq real data remain unimplemented. Avoid cloning the entire SQLite file for every micro-batch.
+- [ ] Validate the new **opt-in** serialized Nextflow micro-batch path (`db_batch_size > 0`) on synthetic Nextflow and real SGE samples. It reuses the ORIGINAL `import_batch.py` and `finalize_samples.py` in one non-cacheable process with `maxForks=1`; the old end-of-run path remains default. No SGE or Nextflow runtime results for this path have yet been confirmed. Benchmark database cloning and per-sample checkpoints.
+- [ ] Retire or redesign the separate single-sample staging merger: real three-sample equivalence test failed (51 event annotations, 560 sample-observation rows, 7,013 summaries differ). Its internal aggregate validator passed, but it is NOT biologically equivalent to the original importer.
 - [x] Same-host locking test with real database: second launcher refused; SHA-256 unchanged; integrity_check ok.
 - [ ] Test cross-host locking on actual shared filesystem and validate recovery with representative biological samples.
 
