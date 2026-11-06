@@ -51,6 +51,13 @@ if (params.enable_failure_injection == true) {
     log.warn "test_failures was supplied but enable_failure_injection=false: no failures will be injected"
 }
 
+// Incremental commit is opt-in; zero or absent selects the validated end-of-run path.
+if (params.db_batch_size != null) {
+    def requested = params.db_batch_size.toString()
+    if (!(requested ==~ /[0-9]+/) || requested.toInteger() < 0)
+        error "db_batch_size must be a nonnegative integer (0 means disabled)"
+}
+
 // Preflight runs synchronously on the launch host before any sample is admitted.
 // Existing SQLite databases are only read here; this step never writes to them.
 def preflightOutdir = new File(params.outdir.toString())
