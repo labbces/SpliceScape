@@ -511,3 +511,44 @@ Do **not** remove or reuse the marker directories during a test. These
 tests simulate task failure, not a whole-cluster crash, a simultaneous
 external SQLite writer, or reliable distributed `flock` behavior across
 hosts. The latter remain separate production validation requirements.
+
+
+### Testing biological dependence on sample import order
+
+The standalone, non-destructive `reads_processing/bin/test_import_order.py` utility
+runs the **original** MAJIQ and SGSeq SQLite parsers on the same files in
+forward and reverse sample order. Each order is imported into separate
+disposable databases using successive batches (default batch size 3) to
+exercise the original micro-batch import behavior. This is not a Nextflow
+run; it never changes the configured persistent `db` or calls
+`finalize_samples.py`.
+
+Use the three-column manifest from the controlled seven-sample test:
+`sample_id<TAB>majiq_results_dir<TAB>sgseq_results_dir` (no header).
+Use the exact JSON configuration and `outdir` that produced those outputs.
+
+```bash
+python3 reads_processing/bin/test_import_order.py \
+  --config /data/dmrp/IntronsSpliceScape/config/isolated_test.json \
+  --manifest /data/dmrp/tmp/splicescape_controlled_comparison/all_samples.tsv \
+  --test-dir /data/dmrp/tmp/splicescape_order_test_01 \
+  --scratch-dir /tmp \
+  --batch-size 3
+```
+
+Choose a **new** test directory and actual writable node-local scratch directory;
+the script refuses to overwrite an existing test directory. Set `--python`
+to the full interpreter path if the launcher is not already using the conda
+environment containing the original parser dependencies. The utility writes
+a per-batch manifest, status, log and SQLite database, plus
+`experiment.json` and `import_order_comparison.json`. The JSON comparison
+summarizes differences in `splicing_events`, `junction_sample_stats`,
+`junction_summary_stats`, and `sample_qc_metrics`, ignoring surrogate
+row IDs. Numerical comparison tolerance: absolute and relative 1e-9.
+A return code of 1 means **differences detected** (scientific test finding);
+a return code of 2 means an operational failure.
+
+This experiment checks reverse-vs-original ordering using identical existing
+input files. It cannot by itself distinguish deterministic order dependence
+from parser nondeterminism; if differences appear, repeat one ordering or
+compare affected fields before changing the original scientific parsers.
