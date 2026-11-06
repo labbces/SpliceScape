@@ -459,3 +459,55 @@ Then run a small new-sample dataset with `db_batch_size=2` and
 biological tables with a baseline using the same sample order. Validate
 early-stage failures, MAJIQ/SGSeq failures, interrupted import, -resume,
 and filesystem locking before production use.
+
+### Controlled micro-batch interruption and recovery test
+
+**Experimental, isolated test databases only.** The Nextflow microbatch process
+supports optional one-shot fault injection immediately before or immediately
+after `finalize_samples.py` atomically replaces the persistent SQLite file.
+These hooks leave the production path unchanged when disabled. They are
+guarded by `enable_recovery_test=true` and create a durable marker directory
+exactly once; on restart they will not inject the same failure again.
+
+Example for a **separate disposable test JSON** (start from a NEW empty db and
+a new outdir, not the validated database):
+
+```json
+{
+  "max_active_samples": 2,
+  "db_batch_size": 2,
+  "enable_recovery_test": true,
+  "recovery_test_interrupt": "before_commit",
+  "recovery_test_marker": "/path/to/disposable_test_outdir/recovery_before.marker"
+}
+```
+
+Keep the remaining biological, scheduling, `db`, `reads_file`, and `outdir`
+parameters from a known-working JSON. The marker parent directory must
+exist and be writable before starting. The first writer imports into
+scratch, then exits **97** before persistent finalization. Expect a Nextflow
+error. Check `sample_processing_status`, `PRAGMA integrity_check`, and
+`inspect_run_journals.py`: analysis-complete records should not be promoted
+to SUCCESS unless they are in the SQLite registry. Do not delete the marker.
+
+Then rerun the SAME JSON and Nextflow working directory with `-resume`.
+The marker prevents the second injected failure; the original importer
+runs again for any eligible unregistered samples, using cached analyses
+where possible. Verify that every sample is registered exactly once and
+that `validate_batch_database.py` reports zero summary mismatches.
+
+Repeat as an INDEPENDENT experiment with another empty disposable DB,
+new outdir, distinct marker, and
+`"recovery_test_interrupt": "after_commit"`.
+In this case, the first writer finishes the atomic DB replacement and
+then exits **98** before Nextflow emits its success report. On restart,
+preflight must skip the already-registered samples. Check registry values
+and the journal: a stale ANALYSIS_COMPLETE journal record is not a reason
+to reimport a sample already registered SUCCESS.
+
+Once both tests have passed, remove `enable_recovery_test`,
+`recovery_test_interrupt` and `recovery_test_marker` from normal JSON files.
+Do **not** remove or reuse the marker directories during a test. These
+tests simulate task failure, not a whole-cluster crash, a simultaneous
+external SQLite writer, or reliable distributed `flock` behavior across
+hosts. The latter remain separate production validation requirements.
