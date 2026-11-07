@@ -1,6 +1,6 @@
 # SpliceScape
 
-**Development branch: v2.3** (v2.2 remains the released baseline)
+**Release: v2.3** — [Release notes](RELEASE_NOTES_v2.3.md). **Known limitation:** MAJIQ/SGSeq event annotations and sample-level PSI can depend on sample import order; see release notes and [TODO](reads_processing/TODO.md).
 
 SpliceScape is a Nextflow pipeline for large-scale identification, quantification, and characterization of alternative splicing events from paired-end RNA-seq data.
 
@@ -158,7 +158,7 @@ Create a JSON file, for example `splicescape.json`:
 | `sgseq_cores` | Core-count argument for SGSeq. |
 | `majiq_cores` | Core-count argument for MAJIQ/VOILA stages. |
 
-For example, `"max_active_samples": 3` allows at most three concurrently admitted samples. In the v2.3 development branch, a bounded **nonblocking admission controller** supplies the first available samples and emits one replacement after each terminal analysis outcome (including handled failures). Unlike the previous implementation, no Nextflow dataflow thread waits in `Semaphore.acquire()`. The controller closes the sample channel after all eligible samples reach terminal outcomes. Actual task scheduling is also limited by the execution profile and cluster resources. **The new controller is not yet SGE-validated; see the TODO and run the synthetic test before integration testing.**
+For example, `"max_active_samples": 3` allows at most three concurrently admitted samples. In the v2.3 development branch, a bounded **nonblocking admission controller** supplies the first available samples and emits one replacement after each terminal analysis outcome (including handled failures). Unlike the previous implementation, no Nextflow dataflow thread waits in `Semaphore.acquire()`. The controller closes the sample channel after all eligible samples reach terminal outcomes. Actual task scheduling is also limited by the execution profile and cluster resources. **The nonblocking controller was tested on Nextflow 25.04.8 and SGE.** Production-scale benchmarking and failure-edge-case tests remain open.
 
 ### 3.3 BBDuk parameters
 
@@ -240,9 +240,7 @@ nextflow run reads_processing/test_sample_admission.nf
 The test covers five sample outcomes (two synthetic failures), a concurrency
 limit of two, exactly-once terminal notification, a single active sample, and
 an empty eligible manifest. It does not execute real SGE tasks or MAJIQ.
-After it passes, an SGE run with more samples than `max_active_samples`
-and mixed success/failure outcomes is required before considering the new
-scheduler validated.
+This scheduling behavior was subsequently exercised with mixed success/failure outcomes on SGE. See [v2.3 release notes](RELEASE_NOTES_v2.3.md) for observed results and remaining limitations.
 
 ### 4.5 Automatic skipping of previously processed samples (v2.3)
 
@@ -334,7 +332,7 @@ The v2.3 development branch has sample-level failure reporting for `WGET_DOWNLOA
 
 Controlled SGE failure-injection tests validated the four intermediate MAJIQ stages (including simultaneous PSI and SG coverage failures). Subsequent database tests validated persistent status records, database-based skipping after removing Nextflow caches, and incremental import with zero cross-sample summary mismatches across 129,603 junction summary rows.
 
-These results do not establish recovery from abrupt process termination before a status file is written, scheduler-level failures, shared reference-step errors, or failures in `POPULATE_DB_BATCH` / `FINALIZE_SAMPLE` themselves. The current admission semaphore is still blocking and requires redesign. See [`reads_processing/TODO.md`](reads_processing/TODO.md).
+These results do not establish recovery from abrupt process termination before a status file is written, scheduler-level failures, shared reference-step errors, or failures in `POPULATE_DB_BATCH` / `FINALIZE_SAMPLE` themselves. The nonblocking admission controller and controlled micro-batch interruption/recovery paths were subsequently validated on SGE. Remaining issues and scientific import-order dependence are tracked in [`reads_processing/TODO.md`](reads_processing/TODO.md).
 
 ## 7. Documentation
 
@@ -373,11 +371,7 @@ python3 -m unittest discover -s reads_processing/tests -p 'test_phase1_safety.py
 nextflow run reads_processing/test_sample_journal.nf
 ```
 
-**Important:** The current v2.3 workflow still imports and finalizes once
-at the end of a run. These journals are a recovery *audit trail*, not a
-persistent work queue with automatic re-import. Streaming micro-batch
-imports, crash-safe transaction boundaries for existing parsers, and
-production-scale performance benchmarks remain to be implemented and tested.
+**Important:** End-of-run import remains the default. Optional `db_batch_size>0` enables serialized incremental commits, validated in controlled SGE tests. Journals are an audit trail, not a standalone persistent work queue. Large-scale performance and crash recovery beyond the simulated boundaries remain to be tested.
 
 
 ### Experimental offline micro-batch SQLite merger (not production enabled)
@@ -442,8 +436,7 @@ replace the persistent database. Only one writer process runs at a time.
 Analysis may overlap with this import process and remains bounded by
 `max_active_samples`.
 
-**Not yet validated on real SGE jobs.** Test on a disposable database and
-outdir, NOT the previously validated `test.sqlite`. The original importer
+**Validated in small real SGE runs and simulated before/after-commit interruption tests, but not on production-scale data.** Test on a disposable database and outdir, NOT the previously validated `test.sqlite`. The original importer
 still copies the accumulated DB to scratch and checkpoints it per sample,
 which may become an I/O bottleneck for thousands of samples.
 
@@ -458,7 +451,7 @@ Then run a small new-sample dataset with `db_batch_size=2` and
 `max_active_samples=2` against an isolated database/outdir. Compare all
 biological tables with a baseline using the same sample order. Validate
 early-stage failures, MAJIQ/SGSeq failures, interrupted import, -resume,
-and filesystem locking before production use.
+and filesystem locking before production use. **Known issue:** same inputs imported in different orders can yield different PSI and event annotations; see [v2.3 release notes](RELEASE_NOTES_v2.3.md).
 
 ### Controlled micro-batch interruption and recovery test
 
