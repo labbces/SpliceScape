@@ -1,7 +1,7 @@
 # TODO — outstanding issues after v2.3
 
 This file tracks only unfinished work. Implemented features and validation
-results are documented in [v2.3 release notes](../RELEASE_NOTES_v2.3.md).
+results are documented in [v2.3 release notes](https://github.com/labbces/SpliceScape/releases/tag/v2.3).
 
 ## Priority 0 — import-order dependence and PSI interpretation
 
