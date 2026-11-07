@@ -37,6 +37,12 @@ def finite(v):
 def coordinate(row):
     chrom=clean(row.get('seqnames')) or clean(row.get('seqID'))
     strand=clean(row.get('strand'))
+    # A3SS/A5SS exports may have no explicit chromosome/strand columns.
+    # Their 'from' graph node encodes both, e.g. D:Chr1:1234:+.
+    node=clean(row.get('from')).split(':')
+    if len(node)==4 and node[3] in {'+','-'}:
+        chrom=chrom or node[1]
+        strand=strand or node[3]
     if not chrom or strand not in {'+','-'}: return ''
     start=finite(row.get('junc_start') or row.get('start'))
     end=finite(row.get('junc_end') or row.get('end'))
