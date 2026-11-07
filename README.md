@@ -1,6 +1,6 @@
 # SpliceScape
 
-**Release: v2.3** — [Release notes](RELEASE_NOTES_v2.3.md). **Known limitation:** MAJIQ/SGSeq event annotations and sample-level PSI can depend on sample import order; see release notes and [TODO](reads_processing/TODO.md).
+**Release: v2.3** — [Release notes](https://github.com/labbces/SpliceScape/releases/tag/v2.3). **Known limitation:** MAJIQ/SGSeq event annotations and sample-level PSI can depend on sample import order; see release notes and [TODO](reads_processing/TODO.md).
 
 SpliceScape is a Nextflow pipeline for large-scale identification, quantification, and characterization of alternative splicing events from paired-end RNA-seq data.
 
@@ -240,7 +240,7 @@ nextflow run reads_processing/test_sample_admission.nf
 The test covers five sample outcomes (two synthetic failures), a concurrency
 limit of two, exactly-once terminal notification, a single active sample, and
 an empty eligible manifest. It does not execute real SGE tasks or MAJIQ.
-This scheduling behavior was subsequently exercised with mixed success/failure outcomes on SGE. See [v2.3 release notes](RELEASE_NOTES_v2.3.md) for observed results and remaining limitations.
+This scheduling behavior was subsequently exercised with mixed success/failure outcomes on SGE. See [v2.3 release notes](https://github.com/labbces/SpliceScape/releases/tag/v2.3) for observed results and remaining limitations.
 
 ### 4.5 Automatic skipping of previously processed samples (v2.3)
 
@@ -451,7 +451,7 @@ Then run a small new-sample dataset with `db_batch_size=2` and
 `max_active_samples=2` against an isolated database/outdir. Compare all
 biological tables with a baseline using the same sample order. Validate
 early-stage failures, MAJIQ/SGSeq failures, interrupted import, -resume,
-and filesystem locking before production use. **Known issue:** same inputs imported in different orders can yield different PSI and event annotations; see [v2.3 release notes](RELEASE_NOTES_v2.3.md).
+and filesystem locking before production use. **Known issue:** same inputs imported in different orders can yield different PSI and event annotations; see [v2.3 release notes](https://github.com/labbces/SpliceScape/releases/tag/v2.3).
 
 ### Controlled micro-batch interruption and recovery test
 
