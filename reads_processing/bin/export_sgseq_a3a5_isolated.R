@@ -135,6 +135,9 @@ run_export <- function(manifest_path,outdir) {
       strand=as.character(GenomicRanges::strand(j)),
       featureID=as.integer(SGSeq::featureID(j)))
     meta<-as.data.frame(S4Vectors::mcols(v),stringsAsFactors=FALSE)
+    # Match the production SGSeq exporter's flattening of CharacterList/
+    # IntegerList metadata. Preserve one row per original SGSeq variant.
+    meta[]<-lapply(meta,function(z) if(is.list(z)) vapply(z,toString,character(1)) else z)
     rec<-map_variants(meta,catalog)
     if(!nrow(rec)) next
     q<-SummarizedExperiment::assays(v)
